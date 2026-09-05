@@ -107,3 +107,131 @@ try:
 
 except Exception as e:
     st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+# 페이지 설정
+st.set_page_config(
+    page_title="서울 기온 분포 분석",
+    page_icon="🌡️",
+    layout="wide",
+)
+
+DATA_URL = (
+    "https://raw.githubusercontent.com/greatsong/modudata/main/data/seoul.csv"
+)
+
+
+@st.cache_data
+def load_data():
+    df = pd.read_csv(DATA_URL)
+    df.columns = df.columns.str.strip()
+
+    # 날짜 컬럼 변환
+    df["날짜"] = pd.to_datetime(df["날짜"])
+    df["연도"] = df["날짜"].dt.year
+
+    # 평균기온 컬럼 자동 탐색
+    temp_col = [col for col in df.columns if "평균기온" in col][0]
+    df_clean = df.dropna(subset=[temp_col]).copy()
+    df_clean.rename(columns={temp_col: "평균기온"}, inplace=True)
+
+    return df_clean
+
+
+st.title("📊 서울 일별 평균기온 구간별 분포 (히스토그램)")
+st.markdown(
+    "지난 100여 년 동안 서울의 **일별 평균기온**이 어느 기온 구간에 가장 많이 분포되어 있는지 확인합니다."
+)
+
+try:
+    df = load_data()
+
+    # 사이드바 컨트롤
+    st.sidebar.header("⚙️ 시각화 설정")
+    bin_size = st.sidebar.slider(
+        "기온 구간 간격 (℃)",
+        min_value=1,
+        max_value=5,
+        value=2,
+        step=1,
+        help="히스토그램의 구간(Bin) 크기를 설정합니다.",
+    )
+
+    # 주요 일별 요약 통계량
+    mean_temp = df["평균기온"].mean()
+    median_temp = df["평균기온"].median()
+    min_temp = df["평균기온"].min()
+    max_temp = df["평균기온"].max()
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("총 관측 일수", f"{len(df):,} 일")
+    col2.metric("전체 일평균 기온", f"{mean_temp:.1f} ℃")
+    col3.metric("최저 일평균 기온", f"{min_temp:.1f} ℃")
+    col4.metric("최고 일평균 기온", f"{max_temp:.1f} ℃")
+
+    st.divider()
+
+    # Plotly 히스토그램 생성
+    fig = px.histogram(
+        df,
+        x="평균기온",
+        nbins=int((max_temp - min_temp) / bin_size),
+        title=f"서울 일별 평균기온 분포 (구간 간격: {bin_size}℃)",
+        labels={"평균기온": "일별 평균기온 (℃)", "count": "일수 (Count)"},
+        color_discrete_sequence=["#2980B9"],
+    )
+
+    # 평균값 및 중앙값 표시 선 추가
+    fig.add_vline(
+        x=mean_temp,
+        line_dash="dash",
+        line_color="red",
+        annotation_text=f"평균 ({mean_temp:.1f}℃)",
+        annotation_position="top right",
+    )
+
+    fig.add_vline(
+        x=median_temp,
+        line_dash="dot",
+        line_color="green",
+        annotation_text=f"중앙값 ({median_temp:.1f}℃)",
+        annotation_position="top left",
+    )
+
+    fig.update_layout(
+        bargap=0.05,
+        xaxis=dict(showgrid=True, gridcolor="#EAEAEA"),
+        yaxis=dict(showgrid=True, gridcolor="#EAEAEA", title="해당 구간 일수"),
+        height=520,
+        hovermode="x unified",
+    )
+
+    fig.update_traces(hovertemplate="기온 구간: %{x}℃<br>관측 일수: %{y:,}일")
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 계절별/구간별 세부 데이터
+    with st.expander("📌 기온 구간별 상세 일수 보기"):
+        counts, bins = pd.cut(
+            df["평균기온"],
+            bins=range(
+                int(min_temp) - 1, int(max_temp) + bin_size + 1, bin_size
+            ),
+            retbins=True,
+        )
+        dist_df = (
+            df.groupby(counts, observed=False)
+            .size()
+            .reset_index(name="일수")
+        )
+        dist_df.columns = ["기온 구간 (℃)", "관측 일수"]
+        dist_df["비율 (%)"] = (
+            dist_df["관측 일수"] / len(df) * 100
+        ).round(2)
+        st.dataframe(dist_df, use_container_width=True)
+
+except Exception as e:
+    st.error(f"데이터 처리 중 오류가 발생했습니다: {e}")

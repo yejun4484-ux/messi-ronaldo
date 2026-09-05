@@ -8,48 +8,28 @@ import pytz
 # 1. 페이지 기본 설정 (타이틀, 레이아웃)
 st.set_page_config(page_title="일별 박스오피스", page_icon="🎬", layout="wide")
 
+# API 기본 설정
+URL = "https://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json"
 
-# 2. 데이터 불러오기 함수 (1시간 동안 캐시 유지)
-@st.cache_data(ttl=3600)
-def fetch_boxoffice_data(target_date, api_key):
-    """KOBIS API를 호출하여 해당 날짜의 박스오피스 데이터를 가져옵니다."""
-    url = "https://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json"
-    params = {"key": api_key, "targetDt": target_date}
+# [보안] Secrets에서 API 키 불러오기
+if "KOBIS_KEY" not in st.secrets:
+    st.error(
+        "🔑 API 키가 설정되지 않았습니다.\n\n"
+        "Streamlit Cloud의 **Secrets** 항목에 `KOBIS_KEY = '발급받은_키'` 형태로 등록해 주세요."
+    )
+    st.stop()
 
-    try:
-        response = requests.get(url, timeout=10)
-        # HTTP 요청 자체가 실패한 경우 (예: 404, 500 에러)
-        if response.status_code != 200:
-            return (
-                None,
-                f"서버 응답 오류가 발생했습니다. (상태 코드: {response.status_code})",
-            )
+API_KEY = st.secrets["KOBIS_KEY"]
 
-        data = response.json()
 
-        # 인증키 오류 등으로 faultInfo가 반환된 경우
-        if "faultInfo" in data:
-            error_msg = data["faultInfo"].get("message", "알 수 없는 오류")
-            return (
-                None,
-                f"API 오류 발생: {error_msg}\n'KOBIS_KEY' 비밀 금고(Secrets) 설정을 확인해 주세요.",
-            )
-
-        # 박스오피스 결과 확인
-        box_office_result = data.get("boxOfficeResult", {})
-        movie_list = box_office_result.get("dailyBoxOfficeList", [])
-
-        # 영화 목록이 비어 있는 경우
-        if not movie_list:
-            return None, "그날은 아직 집계 전입니다."
-
-        return movie_list, None
-
-    except requests.exceptions.RequestException as e:
-        return (
-            None,
-            f"네트워크 요청 중 오류가 발생했습니다: {e}\n인터넷 연결을 확인해 주세요.",
-        )
+# 2. 요청해주신 데이터 불러오기 함수 구조 (1시간 동안 캐시 유지)
+@st.cache_data(ttl=3600)  # 같은 날짜는 한 시간 동안 기억해 두고 API를 다시 부르지 않는다
+def fetch_boxoffice(date_str):
+    """KOBIS API에서 해당 날짜의 일별 박스오피스를 받아 온다."""
+    params = {"key": API_KEY, "targetDt": date_str}
+    res = requests.get(URL, params=params, timeout=10)
+    res.raise_for_status()
+    return res.json()
 
 
 # 3. 순위 증감 텍스트 반환 함수 (상승/하강/변화없음)
@@ -79,19 +59,9 @@ def get_movie_name_with_emoji(name, audi_acc):
     return name
 
 
-# 5. 메인 화면 구성
+# 5. 메인 화면 구성 및 실행
 def main():
     st.title("🎬 일별 박스오피스")
-
-    # [보안] Secrets에서 API 키 불러오기
-    if "KOBIS_KEY" not in st.secrets:
-        st.error(
-            "🔑 API 키가 설정되지 않았습니다.\n\n"
-            "Streamlit Cloud의 **Secrets** 항목에 `KOBIS_KEY = '발급받은_키'` 형태로 등록해 주세요."
-        )
-        return
-
-    api_key = st.secrets["KOBIS_KEY"]
 
     # [시간 처리] 한국 시간(Asia/Seoul) 기준 계산
     korea_tz = pytz.timezone("Asia/Seoul")
@@ -105,18 +75,37 @@ def main():
         max_value=yesterday,
     )
 
-    target_dt_str = selected_date.strftime("%Y%m%d")  # API 호출용 (YYYYMMDD)
+    target_dt = selected_date.strftime("%Y%m%d")  # API 호출용 (YYYYMMDD)
     display_date_str = selected_date.strftime("%Y년 %m월 %d일")  # 화면 표시용
 
-    st.caption(f"📅 조회 기준일: {display_date_str}")
+    st.caption(f"조회 날짜: {display_date_str} (한국 시간 기준)")
 
-    # API 데이터 호출
-    movie_list, error_message = fetch_boxoffice_data(target_dt_str, api_key)
+    # API 데이터 호출 및 네트워크 예외 처리
+    try:
+        data = fetch_boxoffice(target_dt)
+    except requests.RequestException:
+        st.error(
+            "서버에 연결하지 못했습니다. 인터넷 연결을 확인하고 잠시 뒤 새로고침해 주세요."
+        )
+        st.stop()
 
-    # 에러 또는 빈 데이터 발생 시 안내 메시지 출력
-    if error_message:
-        st.info(f"💡 {error_message}")
-        return
+    # 1) 인증키 오류 등으로 faultInfo가 전달된 경우 예외 처리
+    if "faultInfo" in data:
+        error_msg = data["faultInfo"].get("message", "알 수 없는 오류")
+        st.error(
+            f"❌ API 오류가 발생했습니다: {error_msg}\n\n"
+            "'KOBIS_KEY' 비밀 금고(Secrets) 설정에 등록된 키를 다시 확인해 주세요."
+        )
+        st.stop()
+
+    # 2) 영화 데이터 목록 추출
+    box_office_result = data.get("boxOfficeResult", {})
+    movie_list = box_office_result.get("dailyBoxOfficeList", [])
+
+    # 영화 목록이 비어 있는 경우
+    if not movie_list:
+        st.info("💡 그날은 아직 집계 전입니다.")
+        st.stop()
 
     # 데이터프레임 변환
     df = pd.DataFrame(movie_list)

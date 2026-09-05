@@ -235,3 +235,145 @@ try:
 
 except Exception as e:
     st.error(f"데이터 처리 중 오류가 발생했습니다: {e}")
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+# 페이지 기본 설정
+st.set_page_config(
+    page_title="서울 최저기온 vs 최고기온 관계 분석",
+    page_icon="🌡️",
+    layout="wide",
+)
+
+DATA_URL = (
+    "https://raw.githubusercontent.com/greatsong/modudata/main/data/seoul.csv"
+)
+
+
+@st.cache_data
+def load_data():
+    df = pd.read_csv(DATA_URL)
+    df.columns = df.columns.str.strip()
+
+    # 날짜 데이터 변환
+    df["날짜"] = pd.to_datetime(df["날짜"])
+    df["연도"] = df["날짜"].dt.year
+    df["월"] = df["날짜"].dt.month
+
+    # 컬럼명 자동 탐색
+    min_col = [col for col in df.columns if "최저기온" in col][0]
+    max_col = [col for col in df.columns if "최고기온" in col][0]
+
+    # 결측치 제거 및 컬럼 정제
+    df_clean = df.dropna(subset=[min_col, max_col]).copy()
+    df_clean.rename(
+        columns={min_col: "최저기온", max_col: "최고기온"}, inplace=True
+    )
+
+    # 일교차 계산
+    df_clean["일교차"] = df_clean["최고기온"] - df_clean["최저기온"]
+
+    return df_clean
+
+
+st.title("🌡️ 서울 최저기온 vs 최고기온 관계 분석 (산점도)")
+st.markdown(
+    "지난 100여 년간의 서울 일별 **최저기온**과 **최고기온** 간의 상관관계를 산점도로 분석합니다."
+)
+
+try:
+    df = load_data()
+
+    # 사이드바 설정 (월별 필터)
+    st.sidebar.header("⚙️ 데이터 필터링")
+
+    selected_months = st.sidebar.multiselect(
+        "조회할 월 선택",
+        options=list(range(1, 13)),
+        default=list(range(1, 13)),
+        format_func=lambda x: f"{x}월",
+    )
+
+    # 샘플링 옵션 (데이터 양이 많아 렌더링 속도 최적화용)
+    sample_size = st.sidebar.select_slider(
+        "표시할 데이터 수 (샘플링)",
+        options=[5000, 10000, 20000, "전체 (약 4만건)"],
+        value=10000,
+    )
+
+    # 데이터 필터링
+    filtered_df = df[df["월"].isin(selected_months)]
+
+    if sample_size != "전체 (약 4만건)" and len(filtered_df) > sample_size:
+        display_df = filtered_df.sample(n=sample_size, random_state=42)
+    else:
+        display_df = filtered_df
+
+    # 주요 상관관계 통계 수치
+    corr = filtered_df["최저기온"].corr(filtered_df["최고기온"])
+    avg_diurnal = filtered_df["일교차"].mean()
+    max_diurnal = filtered_df["일교차"].max()
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("분석 대상 일수", f"{len(filtered_df):,} 일")
+    col2.metric("상관계수 (r)", f"{corr:.3f}")
+    col3.metric("평균 일교차", f"{avg_diurnal:.1f} ℃")
+    col4.metric("최대 일교차", f"{max_diurnal:.1f} ℃")
+
+    st.divider()
+
+    # Plotly 산점도 생성
+    fig = px.scatter(
+        display_df,
+        x="최저기온",
+        y="최고기온",
+        color="일교차",
+        color_continuous_scale="Turbo",
+        hover_data=["날짜"],
+        title=f"서울 일별 최저기온 vs 최고기온 (표시된 데이터: {len(display_df):,}건)",
+        labels={
+            "최저기온": "최저기온 (℃)",
+            "최고기온": "최고기온 (℃)",
+            "일교차": "일교차(℃)",
+        },
+        opacity=0.6,
+    )
+
+    # y = x 대각 기준선 추가
+    min_val = min(display_df["최저기온"].min(), display_df["최고기온"].min())
+    max_val = max(display_df["최저기온"].max(), display_df["최고기온"].max())
+
+    fig.add_shape(
+        type="line",
+        x0=min_val,
+        y0=min_val,
+        x1=max_val,
+        y1=max_val,
+        line=dict(color="Gray", width=1.5, dash="dash"),
+    )
+
+    fig.update_layout(
+        xaxis=dict(showgrid=True, gridcolor="#EAEAEA"),
+        yaxis=dict(showgrid=True, gridcolor="#EAEAEA"),
+        height=600,
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 일교차 관련 인사이트 요약
+    with st.expander("📌 데이터 인사이트 및 요약"):
+        max_diurnal_row = filtered_df.loc[filtered_df["일교차"].idxmax()]
+        st.write(
+            f"- **상관계수({corr:.3f})**: 최저기온과 최고기온은 **매우 강한 양의 상관관계**를 보입니다."
+        )
+        st.write(
+            f"- **역대 최대 일교차**: **{max_diurnal_row['날짜'].strftime('%Y-%m-%d')}** (최저 {max_diurnal_row['최저기온']}℃ / 최고 {max_diurnal_row['최고기온']}℃ / 일교차 **{max_diurnal_row['일교차']:.1f}℃**)"
+        )
+        st.write(
+            "- 회색 점선($y=x$)에서 위로 멀어질수록 그날의 일교차가 컸음을 의미합니다."
+        )
+
+except Exception as e:
+    st.error(f"데이터 처리 중 오류가 발생했습니다: {e}")

@@ -15,7 +15,10 @@ st.set_page_config(
 )
 
 st.title("🍚 학교 3곳 급식 비교 분석")
-st.write("나이스 교육정보 개방 포털의 급식 데이터를 이용하여 3개 학교를 비교합니다.")
+st.write(
+    "나이스 급식 데이터를 이용하여 "
+    "3개 학교의 급식 다양성과 메뉴 조합을 비교합니다."
+)
 
 BASE_URL = "https://open.neis.go.kr/hub"
 
@@ -112,17 +115,40 @@ def clean_menu(menu):
         menu
     )
 
-    # 특수문자 제거
+    # 별표 제거
+    menu = menu.replace("*", "")
+
+    # 여러 공백을 하나로
     menu = re.sub(
-        r"[*]",
-        "",
+        r"\s+",
+        " ",
         menu
     )
 
-    # 앞뒤 공백 제거
-    menu = menu.strip()
+    return menu.strip()
 
-    return menu
+
+# ==========================================
+# 급식 문자열을 메뉴 리스트로 변환
+# ==========================================
+
+def split_menus(menu_text):
+
+    menus = re.split(
+        r"<br\s*/?>",
+        str(menu_text)
+    )
+
+    result = []
+
+    for menu in menus:
+
+        menu = clean_menu(menu)
+
+        if menu:
+            result.append(menu)
+
+    return result
 
 
 # ==========================================
@@ -147,7 +173,6 @@ def analyze_school(
 
     df = pd.DataFrame(meals)
 
-    # 필요한 열만 사용
     df = df[
         [
             "MLSV_YMD",
@@ -162,36 +187,23 @@ def analyze_school(
         "칼로리"
     ]
 
-    # 날짜 변환
     df["날짜"] = pd.to_datetime(
         df["날짜"],
         format="%Y%m%d"
     )
 
-    # ======================================
-    # 메뉴 분리
-    # ======================================
+    # 메뉴 리스트 생성
+    df["메뉴목록"] = df["메뉴"].apply(
+        split_menus
+    )
 
+    # 전체 메뉴
     all_menus = []
 
-    for menu_text in df["메뉴"]:
+    for menus in df["메뉴목록"]:
+        all_menus.extend(menus)
 
-        menus = re.split(
-            r"<br\s*/?>",
-            menu_text
-        )
-
-        for menu in menus:
-
-            menu = clean_menu(menu)
-
-            if menu:
-                all_menus.append(menu)
-
-    # ======================================
     # 메뉴 등장 횟수
-    # ======================================
-
     menu_count = Counter(all_menus)
 
     menu_df = pd.DataFrame(
@@ -207,33 +219,39 @@ def analyze_school(
         ascending=False
     )
 
-    # ======================================
-    # 칼로리 숫자로 변환
-    # ======================================
+    # ------------------------------------------
+    # 칼로리
+    # ------------------------------------------
 
     calories = []
 
     for value in df["칼로리"]:
 
-        try:
+        match = re.search(
+            r"\d+(\.\d+)?",
+            str(value)
+        )
 
-            # 예: "850.2 Kcal"
-            number = re.search(
-                r"\d+(\.\d+)?",
-                str(value)
+        if match:
+
+            calories.append(
+                float(match.group())
             )
 
-            if number:
-                calories.append(
-                    float(number.group())
-                )
+    if calories:
 
-        except Exception:
-            pass
+        average_calorie = (
+            sum(calories) /
+            len(calories)
+        )
 
-    # ======================================
+    else:
+
+        average_calorie = 0
+
+    # ------------------------------------------
     # 다양성 점수
-    # ======================================
+    # ------------------------------------------
 
     total_menu_count = len(all_menus)
 
@@ -251,22 +269,6 @@ def analyze_school(
     else:
 
         diversity_score = 0
-
-    # ======================================
-    # 평균 칼로리
-    # ======================================
-
-    if calories:
-
-        average_calorie = sum(calories) / len(calories)
-
-    else:
-
-        average_calorie = 0
-
-    # ======================================
-    # 결과
-    # ======================================
 
     return {
 
@@ -295,6 +297,84 @@ def analyze_school(
 
 
 # ==========================================
+# 특정 메인 메뉴와 함께 나온 메뉴 TOP 3
+# ==========================================
+
+def find_related_top3(
+    result,
+    target_menu
+):
+
+    df = result["원본데이터"]
+
+    target_menu = clean_menu(
+        target_menu
+    )
+
+    related_menus = []
+
+    # ------------------------------------------
+    # 메인 메뉴가 나온 날짜 찾기
+    # ------------------------------------------
+
+    for menus in df["메뉴목록"]:
+
+        # 부분 일치
+        has_target = any(
+            target_menu in menu
+            for menu in menus
+        )
+
+        if not has_target:
+            continue
+
+        # 메인 메뉴를 제외하고
+        # 같이 나온 메뉴만 저장
+        for menu in menus:
+
+            if target_menu in menu:
+                continue
+
+            related_menus.append(menu)
+
+    # ------------------------------------------
+    # 등장 횟수 계산
+    # ------------------------------------------
+
+    counter = Counter(
+        related_menus
+    )
+
+    if not counter:
+
+        return pd.DataFrame(
+            columns=[
+                "순위",
+                "함께 나온 메뉴",
+                "횟수"
+            ]
+        )
+
+    top3 = counter.most_common(3)
+
+    top3_df = pd.DataFrame(
+        top3,
+        columns=[
+            "함께 나온 메뉴",
+            "횟수"
+        ]
+    )
+
+    top3_df.insert(
+        0,
+        "순위",
+        range(1, len(top3_df) + 1)
+    )
+
+    return top3_df
+
+
+# ==========================================
 # 사이드바
 # ==========================================
 
@@ -318,7 +398,24 @@ for i in range(3):
 
 
 # ==========================================
-# 날짜 설정
+# 분석할 메인 메뉴
+# ==========================================
+
+st.sidebar.markdown("---")
+
+target_menu = st.sidebar.text_input(
+    "🍖 분석할 메인 메뉴",
+    placeholder="예: 제육볶음"
+)
+
+st.sidebar.caption(
+    "입력한 메뉴가 나온 날에 "
+    "함께 나온 메뉴 TOP 3를 분석합니다."
+)
+
+
+# ==========================================
+# 날짜
 # ==========================================
 
 start_date = st.sidebar.date_input(
@@ -333,16 +430,20 @@ end_date = st.sidebar.date_input(
 
 
 # ==========================================
-# 학교 검색 버튼
+# 학교 검색
 # ==========================================
 
 if st.sidebar.button(
     "🔎 3개 학교 검색"
 ):
 
-    st.session_state["school_results"] = {}
+    st.session_state[
+        "school_results"
+    ] = {}
 
-    for i, name in enumerate(school_names):
+    for i, name in enumerate(
+        school_names
+    ):
 
         if not name:
             continue
@@ -351,7 +452,9 @@ if st.sidebar.button(
             f"{name} 검색 중..."
         ):
 
-            results = search_school(name)
+            results = search_school(
+                name
+            )
 
         st.session_state[
             "school_results"
@@ -375,9 +478,11 @@ if "school_results" in st.session_state:
         ].get(i, [])
 
         if not results:
+
             st.warning(
                 f"{i + 1}번째 학교를 찾지 못했습니다."
             )
+
             continue
 
         options = [
@@ -392,7 +497,9 @@ if "school_results" in st.session_state:
             key=f"selected_{i}"
         )
 
-        index = options.index(selected)
+        index = options.index(
+            selected
+        )
 
         selected_schools.append(
             results[index]
@@ -400,7 +507,7 @@ if "school_results" in st.session_state:
 
 
 # ==========================================
-# 분석 시작
+# 분석
 # ==========================================
 
 if len(selected_schools) == 3:
@@ -426,7 +533,8 @@ if len(selected_schools) == 3:
             ):
 
                 with st.spinner(
-                    f"{school['SCHUL_NM']} 급식 분석 중..."
+                    f"{school['SCHUL_NM']} "
+                    "급식 분석 중..."
                 ):
 
                     result = analyze_school(
@@ -437,15 +545,17 @@ if len(selected_schools) == 3:
 
                 if result:
 
-                    results.append(result)
+                    results.append(
+                        result
+                    )
 
                 progress.progress(
                     (i + 1) / 3
                 )
 
-            # ==================================
-            # 데이터가 없는 경우
-            # ==================================
+            # ======================================
+            # 급식 데이터 확인
+            # ======================================
 
             if len(results) == 0:
 
@@ -456,8 +566,12 @@ if len(selected_schools) == 3:
             else:
 
                 # ==================================
-                # 비교 데이터프레임
+                # 학교 비교표
                 # ==================================
+
+                st.subheader(
+                    "📊 학교별 급식 비교"
+                )
 
                 comparison = pd.DataFrame({
 
@@ -492,15 +606,6 @@ if len(selected_schools) == 3:
                     ]
                 })
 
-
-                # ==================================
-                # 결과 요약
-                # ==================================
-
-                st.subheader(
-                    "📊 학교별 비교 결과"
-                )
-
                 st.dataframe(
                     comparison,
                     use_container_width=True,
@@ -509,7 +614,7 @@ if len(selected_schools) == 3:
 
 
                 # ==================================
-                # 다양성 점수
+                # 다양성 점수 그래프
                 # ==================================
 
                 st.subheader(
@@ -521,7 +626,9 @@ if len(selected_schools) == 3:
                         "학교",
                         "다양성 점수"
                     ]
-                ].set_index("학교")
+                ].set_index(
+                    "학교"
+                )
 
                 st.bar_chart(
                     diversity_chart
@@ -529,7 +636,7 @@ if len(selected_schools) == 3:
 
 
                 # ==================================
-                # 평균 칼로리
+                # 칼로리 비교
                 # ==================================
 
                 st.subheader(
@@ -541,7 +648,9 @@ if len(selected_schools) == 3:
                         "학교",
                         "평균 칼로리"
                     ]
-                ].set_index("학교")
+                ].set_index(
+                    "학교"
+                )
 
                 st.bar_chart(
                     calorie_chart
@@ -549,7 +658,7 @@ if len(selected_schools) == 3:
 
 
                 # ==================================
-                # 순위
+                # 다양성 순위
                 # ==================================
 
                 st.subheader(
@@ -563,12 +672,13 @@ if len(selected_schools) == 3:
                     drop=True
                 )
 
-                ranking.index += 1
-
                 ranking.insert(
                     0,
                     "순위",
-                    ranking.index
+                    range(
+                        1,
+                        len(ranking) + 1
+                    )
                 )
 
                 st.dataframe(
@@ -585,11 +695,147 @@ if len(selected_schools) == 3:
 
 
                 # ==================================
+                # 메인 메뉴 연관 분석
+                # ==================================
+
+                if target_menu:
+
+                    st.markdown("---")
+
+                    st.subheader(
+                        f"🍖 '{target_menu}'와 "
+                        "함께 나온 메뉴 TOP 3"
+                    )
+
+                    st.write(
+                        f"'{target_menu}'가 나온 급식일을 "
+                        "찾아 해당 날짜에 함께 제공된 "
+                        "메뉴의 등장 횟수를 계산합니다."
+                    )
+
+                    related_results = []
+
+                    for result in results:
+
+                        top3 = find_related_top3(
+                            result,
+                            target_menu
+                        )
+
+                        related_results.append(
+                            (
+                                result["학교명"],
+                                top3
+                            )
+                        )
+
+                    # ----------------------------------
+                    # 학교 3개를 가로로 표시
+                    # ----------------------------------
+
+                    cols = st.columns(3)
+
+                    for i, (
+                        school_name,
+                        top3
+                    ) in enumerate(
+                        related_results
+                    ):
+
+                        with cols[i]:
+
+                            st.markdown(
+                                f"### 🏫 {school_name}"
+                            )
+
+                            if top3.empty:
+
+                                st.info(
+                                    f"'{target_menu}'가 "
+                                    "나온 날을 찾지 못했습니다."
+                                )
+
+                            else:
+
+                                st.dataframe(
+                                    top3,
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+
+
+                    # ==================================
+                    # 학교별 1위 메뉴 비교
+                    # ==================================
+
+                    st.subheader(
+                        f"🥇 '{target_menu}' "
+                        "최다 조합 비교"
+                    )
+
+                    first_menus = []
+
+                    for school_name, top3 in related_results:
+
+                        if not top3.empty:
+
+                            first = top3.iloc[0]
+
+                            first_menus.append({
+
+                                "학교": school_name,
+
+                                "가장 많이 함께 나온 메뉴":
+                                    first["함께 나온 메뉴"],
+
+                                "횟수":
+                                    first["횟수"]
+                            })
+
+                    if first_menus:
+
+                        first_df = pd.DataFrame(
+                            first_menus
+                        )
+
+                        st.dataframe(
+                            first_df,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+
+                    # ==================================
+                    # 분석 문장
+                    # ==================================
+
+                    st.subheader(
+                        "💡 메뉴 조합 분석"
+                    )
+
+                    for school_name, top3 in related_results:
+
+                        if not top3.empty:
+
+                            first = top3.iloc[0]
+
+                            st.write(
+                                f"**{school_name}**에서는 "
+                                f"'{target_menu}'가 나온 날 "
+                                f"**{first['함께 나온 메뉴']}**가 "
+                                f"가장 많이 함께 나왔습니다 "
+                                f"({first['횟수']}회)."
+                            )
+
+
+                # ==================================
                 # 학교별 반복 메뉴
                 # ==================================
 
+                st.markdown("---")
+
                 st.subheader(
-                    "🔁 학교별 가장 많이 반복된 메뉴"
+                    "🔁 학교별 많이 나온 메뉴"
                 )
 
                 cols = st.columns(3)
@@ -600,17 +846,12 @@ if len(selected_schools) == 3:
 
                     with cols[i]:
 
-                        st.write(
+                        st.markdown(
                             f"### {result['학교명']}"
                         )
 
-                        top10 = (
-                            result["메뉴분석"]
-                            .head(10)
-                        )
-
                         st.dataframe(
-                            top10,
+                            result["메뉴분석"].head(10),
                             use_container_width=True,
                             hide_index=True
                         )
@@ -620,8 +861,10 @@ if len(selected_schools) == 3:
                 # 최종 분석
                 # ==================================
 
+                st.markdown("---")
+
                 st.subheader(
-                    "💡 최종 분석"
+                    "📌 최종 분석"
                 )
 
                 best = comparison.loc[
@@ -636,18 +879,6 @@ if len(selected_schools) == 3:
                     ].idxmin()
                 ]
 
-                calorie_high = comparison.loc[
-                    comparison[
-                        "평균 칼로리"
-                    ].idxmax()
-                ]
-
-                calorie_low = comparison.loc[
-                    comparison[
-                        "평균 칼로리"
-                    ].idxmin()
-                ]
-
                 st.success(
                     f"🌱 급식 다양성이 가장 높은 학교는 "
                     f"**{best['학교']}**이며 "
@@ -656,29 +887,14 @@ if len(selected_schools) == 3:
                 )
 
                 st.warning(
-                    f"🔁 비교한 학교 중 다양성 점수가 "
-                    f"가장 낮은 학교는 "
+                    f"🔁 다양성 점수가 가장 낮은 학교는 "
                     f"**{worst['학교']}**이며 "
                     f"**{worst['다양성 점수']}점**입니다."
                 )
 
-                st.info(
-                    f"🔥 평균 칼로리가 가장 높은 학교는 "
-                    f"**{calorie_high['학교']}** "
-                    f"({calorie_high['평균 칼로리']} kcal)이고, "
-                    f"가장 낮은 학교는 "
-                    f"**{calorie_low['학교']}** "
-                    f"({calorie_low['평균 칼로리']} kcal)입니다."
-                )
-
-
-# ==========================================
-# 처음 화면
-# ==========================================
-
 else:
 
     st.info(
-        "👈 왼쪽에서 3개 학교의 이름을 입력한 뒤 "
+        "👈 왼쪽에서 학교 3곳을 입력하고 "
         "'3개 학교 검색'을 눌러주세요."
     )

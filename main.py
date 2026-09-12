@@ -117,6 +117,6 @@ st.plotly_chart(
 
 st.markdown(
 
-    <div style="
+    <div style=
         border-left: 4px solid #4A
 

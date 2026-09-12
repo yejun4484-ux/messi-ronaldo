@@ -138,10 +138,56 @@ st.text_input(
     label_visibility="collapsed"
 )
 
-
 # ============================================================
-# 그래프 3 이후 추가 영역
+# 그래프 3
 # ============================================================
 st.divider()
-st.header("그래프 3")
-st.info("앞으로 추가할 그래프를 이 구역에 넣으면 됩니다.")
+st.header("그래프 3. 날짜별 10위권 일관객 합계")
+
+daily_total = (
+    df.groupby("날짜", as_index=False)["일관객"]
+    .sum()
+    .sort_values("날짜")
+)
+
+top_3_days = daily_total.nlargest(3, "일관객").sort_values("날짜")
+
+fig3 = px.area(
+    daily_total,
+    x="날짜",
+    y="일관객",
+    labels={"날짜": "날짜", "일관객": "10위권 일관객 합계"},
+    title="날짜별 10위권 일관객 합계",
+)
+
+fig3.update_traces(
+    hovertemplate="날짜: %{x|%Y-%m-%d}<br>관객 수: %{y:,}명<extra></extra>"
+)
+
+fig3.add_scatter(
+    x=top_3_days["날짜"],
+    y=top_3_days["일관객"],
+    mode="markers+text",
+    text=top_3_days["날짜"].dt.strftime("%Y-%m-%d"),
+    textposition="top center",
+    marker=dict(size=10),
+    name="합계 상위 3일",
+    hovertemplate="날짜: %{x|%Y-%m-%d}<br>관객 수: %{y:,}명<extra></extra>",
+)
+
+fig3.update_layout(
+    hovermode="x unified",
+    yaxis_tickformat=",",
+    height=500,
+    showlegend=True,
+)
+
+st.plotly_chart(fig3, use_container_width=True)
+
+st.markdown("**이 그래프로 알 수 있는 것:**")
+st.text_input(
+    "문구를 입력하세요.",
+    placeholder="예: 특정 날짜에 영화관 관객이 크게 몰린 시점을 확인할 수 있다.",
+    key="graph3_note",
+    label_visibility="collapsed",
+)

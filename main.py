@@ -84,12 +84,64 @@ st.text_input(
 
 
 # ============================================================
-# 앞으로 추가할 그래프 영역
+# 그래프 2
 # ============================================================
 st.divider()
-st.header("그래프 2")
-st.info("앞으로 추가할 그래프를 이 구역에 넣으면 됩니다.")
+st.header("그래프 2. 일관객 합계 상위 5편의 날짜별 변화")
 
+top5_movies = (
+    df.groupby("영화명", as_index=False)["일관객"]
+    .sum()
+    .sort_values("일관객", ascending=False)
+    .head(5)["영화명"]
+    .tolist()
+)
+
+top5_df = (
+    df[df["영화명"].isin(top5_movies)]
+    .sort_values("날짜")
+    .copy()
+)
+
+fig2 = px.line(
+    top5_df,
+    x="날짜",
+    y="일관객",
+    color="영화명",
+    markers=True,
+    labels={
+        "날짜": "날짜",
+        "일관객": "일관객 수",
+        "영화명": "영화",
+    },
+    title="일관객 합계 상위 5편의 날짜별 일관객 변화",
+)
+
+fig2.update_traces(
+    hovertemplate="날짜: %{x|%Y-%m-%d}<br>관객 수: %{y:,}명<extra>%{fullData.name}</extra>"
+)
+
+fig2.update_layout(
+    hovermode="x unified",
+    yaxis_tickformat=",",
+    height=550,
+    legend_title_text="영화 (클릭하여 켜기/끄기)",
+)
+
+st.plotly_chart(fig2, use_container_width=True)
+
+st.markdown("**이 그래프로 알 수 있는 것:**")
+st.text_input(
+    "문구를 입력하세요.",
+    placeholder="예: 일관객 합계가 큰 영화들의 흥행 추이를 날짜별로 비교할 수 있다.",
+    key="graph2_note",
+    label_visibility="collapsed"
+)
+
+
+# ============================================================
+# 그래프 3 이후 추가 영역
+# ============================================================
 st.divider()
 st.header("그래프 3")
 st.info("앞으로 추가할 그래프를 이 구역에 넣으면 됩니다.")

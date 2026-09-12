@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -26,6 +27,7 @@ DATA_URL = (
     "https://raw.githubusercontent.com/greatsong/modudata/"
     "main/data/kobis_movies.csv"
 )
+
 
 @st.cache_data
 def load_data():
@@ -58,7 +60,7 @@ df = load_data()
 
 
 # -----------------------------------
-# 데이터 확인
+# 데이터 개요
 # -----------------------------------
 st.subheader("📊 데이터 개요")
 
@@ -90,7 +92,7 @@ genre_count = (
 
 genre_count.columns = ["장르", "영화 편수"]
 
-fig = px.pie(
+fig1 = px.pie(
     genre_count,
     names="장르",
     values="영화 편수",
@@ -98,7 +100,7 @@ fig = px.pie(
     title="장르별 영화 편수"
 )
 
-fig.update_traces(
+fig1.update_traces(
     textinfo="percent",
     hovertemplate=(
         "<b>%{label}</b><br>"
@@ -107,12 +109,12 @@ fig.update_traces(
     )
 )
 
-fig.update_layout(
+fig1.update_layout(
     legend_title_text="장르",
     margin=dict(t=60, l=20, r=20, b=20)
 )
 
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig1, use_container_width=True)
 
 st.markdown(
     """
@@ -133,8 +135,68 @@ st.markdown(
 )
 
 
+# ===================================
+# 그래프 2. 장르별 영화 트리맵
+# ===================================
+st.subheader("2. 장르별 영화 관객수 트리맵")
+
+# 총 관객수를 숫자로 변환
+df_treemap = df.copy()
+
+df_treemap["total_audi"] = pd.to_numeric(
+    df_treemap["total_audi"],
+    errors="coerce"
+)
+
+# 총 관객수가 없는 행 제거
+df_treemap = df_treemap.dropna(
+    subset=["total_audi"]
+)
+
+# 트리맵
+fig2 = px.treemap(
+    df_treemap,
+    path=["genre", "movieNm"],
+    values="total_audi",
+    title="장르 안에 들어 있는 영화별 총 관객수"
+)
+
+fig2.update_traces(
+    hovertemplate=(
+        "<b>%{label}</b><br>"
+        "총 관객: %{value:,.0f}명"
+        "<extra></extra>"
+    )
+)
+
+fig2.update_layout(
+    margin=dict(t=60, l=10, r=10, b=10)
+)
+
+st.plotly_chart(fig2, use_container_width=True)
+
+st.markdown(
+    """
+    <div style="
+        border-left: 4px solid #4A90E2;
+        padding: 12px 16px;
+        margin-top: 8px;
+        margin-bottom: 30px;
+        background-color: rgba(74, 144, 226, 0.08);
+        border-radius: 4px;
+    ">
+        <b>이 그래프로 알 수 있는 것</b><br>
+        각 장르 안에서 어떤 영화가 많은 관객을 모았는지와
+        영화별 관객 규모의 차이를 면적을 통해 비교할 수 있습니다.
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
 # -----------------------------------
-# 데이터 표
+# 원본 데이터 미리 보기
 # -----------------------------------
 with st.expander("원본 데이터 미리 보기"):
     st.dataframe(df, use_container_width=True)
+```

@@ -71,7 +71,6 @@ with col2:
 with col3:
     st.metric("데이터 열 수", f"{len(df.columns):,}개")
 
-
 st.divider()
 
 
@@ -119,82 +118,5 @@ st.plotly_chart(
 st.markdown(
     """
     <div style="
-        border-left: 4px solid #4A90E2;
-        padding: 12px 16px;
-        margin-top: 8px;
-        margin-bottom: 30px;
-        background-color: rgba(74, 144, 226, 0.08);
-        border-radius: 4px;
-    ">
-        <b>이 그래프로 알 수 있는 것</b><br>
-        어떤 장르의 영화가 이 기간에 개봉한 박스오피스 10위권 영화에서
-        많이 차지했는지 한눈에 비교할 수 있습니다.
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-
-# ==========================================
-# 그래프 2. 장르별 영화 트리맵
-# ==========================================
-
-st.subheader("2. 장르별 영화 관객수 트리맵")
-
-treemap_data = df.dropna(
-    subset=["total_audi", "movieNm", "genre"]
-).copy()
-
-fig2 = px.treemap(
-    treemap_data,
-    path=["genre", "movieNm"],
-    values="total_audi",
-    title="장르 안에 들어 있는 영화별 총 관객수"
-)
-
-fig2.update_traces(
-    hovertemplate=(
-        "<b>%{label}</b><br>"
-        "총 관객: %{value:,.0f}명"
-        "<extra></extra>"
-    )
-)
-
-fig2.update_layout(
-    margin=dict(t=60, l=10, r=10, b=10)
-)
-
-st.plotly_chart(
-    fig2,
-    use_container_width=True
-)
-
-st.markdown(
-    """
-    <div style="
-        border-left: 4px solid #4A90E2;
-        padding: 12px 16px;
-        margin-top: 8px;
-        margin-bottom: 30px;
-        background-color: rgba(74, 144, 226, 0.08);
-        border-radius: 4px;
-    ">
-        <b>이 그래프로 알 수 있는 것</b><br>
-        각 장르 안에서 어떤 영화가 많은 관객을 모았는지와
-        영화별 관객 규모의 차이를 면적을 통해 비교할 수 있습니다.
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-
-# ==========================================
-# 원본 데이터
-# ==========================================
-
-with st.expander("원본 데이터 미리 보기"):
-    st.dataframe(
-        df,
-        use_container_width=True
-    )
+        border-left: 4px solid #4A
 

@@ -196,3 +196,104 @@ st.plotly_chart(
 
 
 # 가장 많은 영화가 몰려 있는 구간
+bins = pd.cut(
+    hist_data["total_audi"],
+    bins=20,
+    include_lowest=True
+)
+
+bin_counts = bins.value_counts().sort_index()
+most_common_bin = bin_counts.idxmax()
+
+lower_bound = most_common_bin.left
+upper_bound = most_common_bin.right
+
+
+# 가장 관객이 많은 영화
+top_movie = hist_data.loc[
+    hist_data["total_audi"].idxmax()
+]
+
+top_movie_name = top_movie["movieNm"]
+top_movie_audi = int(top_movie["total_audi"])
+
+st.info(
+    f"이 그래프로 알 수 있는 것: "
+    f"대부분의 영화는 총 관객수 "
+    f"{lower_bound:,.0f}명 ~ {upper_bound:,.0f}명 구간에 몰려 있으며, "
+    f"가장 관객이 많은 영화는 "
+    f"{top_movie_name}({top_movie_audi:,.0f}명)입니다."
+)
+
+
+# ==========================================
+# 그래프 4. 개봉일 스크린수와 총 관객의 관계
+# ==========================================
+
+st.subheader("4. 개봉일 스크린수와 총 관객의 관계")
+
+scatter_data = df.dropna(
+    subset=["first_scrn", "total_audi", "movieNm", "genre"]
+).copy()
+
+fig4 = px.scatter(
+    scatter_data,
+    x="first_scrn",
+    y="total_audi",
+    color="genre",
+    hover_name="movieNm",
+    hover_data={
+        "first_scrn": ":,.0f",
+        "total_audi": ":,.0f",
+        "genre": True
+    },
+    labels={
+        "first_scrn": "개봉일 스크린수",
+        "total_audi": "총 관객수",
+        "genre": "장르"
+    },
+    title="개봉일 스크린수와 총 관객수"
+)
+
+fig4.update_traces(
+    marker=dict(
+        size=9,
+        opacity=0.75
+    ),
+    hovertemplate=(
+        "<b>%{hovertext}</b><br>"
+        "장르: %{customdata[2]}<br>"
+        "개봉일 스크린수: %{x:,.0f}개<br>"
+        "총 관객수: %{y:,.0f}명"
+        "<extra></extra>"
+    )
+)
+
+fig4.update_layout(
+    xaxis_title="개봉일 스크린수",
+    yaxis_title="총 관객수",
+    margin=dict(t=60, l=20, r=20, b=20)
+)
+
+st.plotly_chart(
+    fig4,
+    use_container_width=True
+)
+
+st.info(
+    "이 그래프로 알 수 있는 것: "
+    "개봉일에 더 많은 스크린을 확보한 영화가 총 관객수에서도 "
+    "더 높은 성과를 보이는지 영화별로 비교할 수 있습니다."
+)
+
+
+# ==========================================
+# 원본 데이터
+# ==========================================
+
+with st.expander("원본 데이터 미리 보기"):
+    st.dataframe(
+        df,
+        use_container_width=True
+    )
+

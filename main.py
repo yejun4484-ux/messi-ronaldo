@@ -1,12 +1,8 @@
-python
+```python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-
-# -----------------------------------
-# 페이지 설정
-# -----------------------------------
 st.set_page_config(
     page_title="영화 데이터 그래프 도감 2 - 분포와 관계",
     page_icon="🎬",
@@ -14,33 +10,26 @@ st.set_page_config(
 )
 
 st.title("🎬 영화 데이터 그래프 도감 2 - 분포와 관계")
-st.markdown(
+st.write(
     "1년간 박스오피스 10위권에 든 영화 가운데 "
     "이 기간에 개봉한 216편의 데이터를 살펴봅니다."
 )
 
-
-# -----------------------------------
-# 데이터 불러오기
-# -----------------------------------
-DATA_URL = (
-    "https://raw.githubusercontent.com/greatsong/modudata/"
-    "main/data/kobis_movies.csv"
-)
+DATA_URL = "https://raw.githubusercontent.com/greatsong/modudata/main/data/kobis_movies.csv"
 
 
 @st.cache_data
 def load_data():
     df = pd.read_csv(DATA_URL)
 
-    # 개봉일: 여덟 자리 숫자 → 날짜 형식으로 변환
+    # 개봉일
     df["openDt"] = pd.to_datetime(
         df["openDt"].astype(str),
         format="%Y%m%d",
         errors="coerce"
     )
 
-    # genre에 여러 장르가 "|"로 연결되어 있으면 첫 번째 장르만 사용
+    # 여러 장르가 있으면 첫 번째 장르만 사용
     df["genre"] = (
         df["genre"]
         .fillna("미상")
@@ -50,8 +39,14 @@ def load_data():
         .str.strip()
     )
 
-    # 빈 장르는 미상으로 처리
+    # 빈 장르 처리
     df.loc[df["genre"] == "", "genre"] = "미상"
+
+    # 총 관객수를 숫자로 변환
+    df["total_audi"] = pd.to_numeric(
+        df["total_audi"],
+        errors="coerce"
+    )
 
     return df
 
@@ -59,9 +54,10 @@ def load_data():
 df = load_data()
 
 
-# -----------------------------------
+# ==========================================
 # 데이터 개요
-# -----------------------------------
+# ==========================================
+
 st.subheader("📊 데이터 개요")
 
 col1, col2, col3 = st.columns(3)
@@ -79,9 +75,10 @@ with col3:
 st.divider()
 
 
-# ===================================
+# ==========================================
 # 그래프 1. 장르별 영화 편수
-# ===================================
+# ==========================================
+
 st.subheader("1. 장르별 영화 편수")
 
 genre_count = (
@@ -114,7 +111,10 @@ fig1.update_layout(
     margin=dict(t=60, l=20, r=20, b=20)
 )
 
-st.plotly_chart(fig1, use_container_width=True)
+st.plotly_chart(
+    fig1,
+    use_container_width=True
+)
 
 st.markdown(
     """
@@ -135,27 +135,18 @@ st.markdown(
 )
 
 
-# ===================================
+# ==========================================
 # 그래프 2. 장르별 영화 트리맵
-# ===================================
+# ==========================================
+
 st.subheader("2. 장르별 영화 관객수 트리맵")
 
-# 총 관객수를 숫자로 변환
-df_treemap = df.copy()
+treemap_data = df.dropna(
+    subset=["total_audi", "movieNm", "genre"]
+).copy()
 
-df_treemap["total_audi"] = pd.to_numeric(
-    df_treemap["total_audi"],
-    errors="coerce"
-)
-
-# 총 관객수가 없는 행 제거
-df_treemap = df_treemap.dropna(
-    subset=["total_audi"]
-)
-
-# 트리맵
 fig2 = px.treemap(
-    df_treemap,
+    treemap_data,
     path=["genre", "movieNm"],
     values="total_audi",
     title="장르 안에 들어 있는 영화별 총 관객수"
@@ -173,7 +164,10 @@ fig2.update_layout(
     margin=dict(t=60, l=10, r=10, b=10)
 )
 
-st.plotly_chart(fig2, use_container_width=True)
+st.plotly_chart(
+    fig2,
+    use_container_width=True
+)
 
 st.markdown(
     """
@@ -194,9 +188,13 @@ st.markdown(
 )
 
 
-# -----------------------------------
-# 원본 데이터 미리 보기
-# -----------------------------------
-with st.expander("원본 데이터 미리 보기"):
-    st.dataframe(df, use_container_width=True)
+# ==========================================
+# 원본 데이터
+# ==========================================
 
+with st.expander("원본 데이터 미리 보기"):
+    st.dataframe(
+        df,
+        use_container_width=True
+    )
+```

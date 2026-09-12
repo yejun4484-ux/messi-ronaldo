@@ -15,6 +15,7 @@ st.set_page_config(
 )
 
 st.title("🍚 학교 3곳 급식 비교 분석")
+
 st.write(
     "나이스 교육정보 개방 포털의 급식 데이터를 이용하여 "
     "3개 학교의 급식 다양성과 메뉴 조합을 비교합니다."
@@ -22,17 +23,21 @@ st.write(
 
 BASE_URL = "https://open.neis.go.kr/hub"
 
+
 # ==========================================
 # API KEY
 # ==========================================
 
 try:
     API_KEY = st.secrets["NEIS_API_KEY"]
+
 except Exception:
+
     st.error(
         "NEIS API 키가 설정되지 않았습니다. "
         "Streamlit Secrets에 NEIS_API_KEY를 추가해주세요."
     )
+
     st.stop()
 
 
@@ -161,7 +166,7 @@ def get_meal_data(
 
 def clean_menu(menu):
 
-    # 알레르기 번호 제거
+    # 알레르기 번호 및 괄호 내용 제거
     menu = re.sub(
         r"\([^)]*\)",
         "",
@@ -238,7 +243,7 @@ def analyze_school(
 
     df = pd.DataFrame(meals)
 
-    # 필요한 데이터가 있는지 확인
+    # 필요한 데이터 확인
     required_columns = [
         "MLSV_YMD",
         "DDISH_NM",
@@ -270,14 +275,20 @@ def analyze_school(
         split_menus
     )
 
-    # 전체 메뉴
+    # ==========================================
+    # 전체 메뉴 모으기
+    # ==========================================
+
     all_menus = []
 
     for menus in df["메뉴목록"]:
 
         all_menus.extend(menus)
 
+    # ==========================================
     # 메뉴별 등장 횟수
+    # ==========================================
+
     menu_count = Counter(
         all_menus
     )
@@ -317,8 +328,8 @@ def analyze_school(
     if calories:
 
         average_calorie = (
-            sum(calories) /
-            len(calories)
+            sum(calories)
+            / len(calories)
         )
 
     else:
@@ -340,8 +351,8 @@ def analyze_school(
     if total_menu_count > 0:
 
         diversity_score = (
-            unique_menu_count /
-            total_menu_count
+            unique_menu_count
+            / total_menu_count
         ) * 100
 
     else:
@@ -384,6 +395,7 @@ def analyze_school(
 
 # ==========================================
 # 특정 메뉴와 함께 나온 메뉴 TOP 3
+# 김치 / 밥류 제외
 # ==========================================
 
 def find_related_top3(
@@ -400,12 +412,12 @@ def find_related_top3(
     related_menus = []
 
     # ==========================================
-    # 해당 메인 메뉴가 나온 날 찾기
+    # 특정 메뉴가 나온 날 찾기
     # ==========================================
 
     for menus in df["메뉴목록"]:
 
-        # 메인 메뉴가 포함된 날인지 확인
+        # 특정 메뉴가 포함된 날인지 확인
         has_target = any(
             target_menu in menu
             for menu in menus
@@ -416,16 +428,27 @@ def find_related_top3(
             continue
 
         # ======================================
-        # 같은 날 나온 다른 메뉴 수집
+        # 같은 날 나온 다른 메뉴 찾기
         # ======================================
 
         for menu in menus:
 
-            # 메인 메뉴 자체는 제외
+            # 특정 메뉴 자체는 제외
             if target_menu in menu:
 
                 continue
 
+            # 김치류 제외
+            if "김치" in menu:
+
+                continue
+
+            # 밥류 제외
+            if "밥" in menu:
+
+                continue
+
+            # 나머지 메뉴만 추가
             related_menus.append(
                 menu
             )
@@ -448,6 +471,7 @@ def find_related_top3(
             ]
         )
 
+    # TOP 3
     top3 = counter.most_common(3)
 
     top3_df = pd.DataFrame(
@@ -498,7 +522,7 @@ for i in range(3):
 
 
 # ==========================================
-# 메인 메뉴 설정
+# 특정 메뉴 설정
 # ==========================================
 
 st.sidebar.markdown("---")
@@ -510,7 +534,11 @@ target_menu = st.sidebar.text_input(
 
 st.sidebar.caption(
     "입력한 메뉴가 나온 날에 "
-    "함께 나온 메뉴 TOP 3를 학교별로 분석합니다."
+    "함께 나온 메뉴 TOP 3를 분석합니다."
+)
+
+st.sidebar.caption(
+    "※ 김치류와 밥류는 분석에서 제외됩니다."
 )
 
 
@@ -801,7 +829,7 @@ if len(selected_schools) == 3:
 
 
                 # ==================================
-                # 메인 메뉴 조합 분석
+                # 특정 메뉴 조합 분석
                 # ==================================
 
                 if target_menu:
@@ -816,6 +844,11 @@ if len(selected_schools) == 3:
                     st.write(
                         f"'{target_menu}'가 나온 날에 "
                         "함께 제공된 메뉴를 분석합니다."
+                    )
+
+                    st.caption(
+                        "※ 김치류와 밥류는 제외하고 "
+                        "나머지 메뉴만 계산합니다."
                     )
 
                     related_results = []
@@ -839,9 +872,7 @@ if len(selected_schools) == 3:
                     # 학교 3곳 TOP 3
                     # ==================================
 
-                    cols = st.columns(
-                        3
-                    )
+                    cols = st.columns(3)
 
                     for i, (
                         school_name,
@@ -860,7 +891,8 @@ if len(selected_schools) == 3:
 
                                 st.info(
                                     f"'{target_menu}'가 "
-                                    "나온 날이 없습니다."
+                                    "나온 날이 없거나 "
+                                    "분석할 메뉴가 없습니다."
                                 )
 
                             else:
@@ -953,9 +985,7 @@ if len(selected_schools) == 3:
                     "🔁 학교별 많이 나온 메뉴"
                 )
 
-                cols = st.columns(
-                    3
-                )
+                cols = st.columns(3)
 
                 for i, result in enumerate(
                     results

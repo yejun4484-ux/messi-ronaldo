@@ -1,1047 +1,315 @@
 import streamlit as st
-import requests
 import pandas as pd
-import re
-from collections import Counter
+import numpy as np
+import plotly.graph_objects as go
 
-# ==========================================
+# --------------------------------------------------
 # 기본 설정
-# ==========================================
-
+# --------------------------------------------------
 st.set_page_config(
-    page_title="학교 3곳 급식 비교",
-    page_icon="🍚",
-    layout="wide"
+    page_title="기온 예측기",
+    page_icon="🌡️",
+    layout="wide",
 )
 
-st.title("🍚 학교 3곳 급식 비교 분석")
-
-st.write(
-    "나이스 교육정보 개방 포털의 급식 데이터를 이용하여 "
-    "3개 학교의 급식 다양성과 메뉴 조합을 비교합니다."
+DATA_URL = (
+    "https://raw.githubusercontent.com/greatsong/modudata/"
+    "bb860932644270ad1199f10d3e7670e30231bce4/data/seoul.csv"
 )
 
-BASE_URL = "https://open.neis.go.kr/hub"
+BASE_YEAR = 1908
+LAST_YEAR = 2025
+MIN_DAYS = 300
 
 
-# ==========================================
-# API KEY
-# ==========================================
+# --------------------------------------------------
+# 데이터 불러오기
+# --------------------------------------------------
+@st.cache_data
+def load_data():
+    df = pd.read_csv(DATA_URL, encoding="utf-8-sig")
 
-try:
-    API_KEY = st.secrets["NEIS_API_KEY"]
+    # 날짜 변환
+    df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce")
 
-except Exception:
+    # 숫자형 변환
+    df["평균기온"] = pd.to_numeric(df["평균기온"], errors="coerce")
 
-    st.error(
-        "NEIS API 키가 설정되지 않았습니다. "
-        "Streamlit Secrets에 NEIS_API_KEY를 추가해주세요."
+    # 유효한 데이터만 사용
+    df = df.dropna(subset=["날짜", "평균기온"]).copy()
+
+    # 연도 추출
+    df["연도"] = df["날짜"].dt.year
+
+    return df
+
+
+# --------------------------------------------------
+# 연도별 평균기온 계산
+# --------------------------------------------------
+@st.cache_data
+def make_yearly_data(df):
+    yearly = (
+        df.groupby("연도")
+        .agg(
+            평균기온=("평균기온", "mean"),
+            관측일수=("평균기온", "count"),
+        )
+        .reset_index()
     )
 
+    # 기준 기간:
+    # 1. 2025년 이후 제외
+    # 2. 관측일수가 300일 미만인 해 제외
+    # 3. 회귀의 시작 연도는 1908년
+    yearly = yearly[
+        (yearly["연도"] >= BASE_YEAR)
+        & (yearly["연도"] <= LAST_YEAR)
+        & (yearly["관측일수"] >= MIN_DAYS)
+    ].copy()
+
+    yearly = yearly.sort_values("연도").reset_index(drop=True)
+
+    return yearly
+
+
+# --------------------------------------------------
+# 회귀 계산
+# --------------------------------------------------
+@st.cache_data
+def calculate_regression(yearly):
+    x = yearly["연도"].to_numpy(dtype=float) - BASE_YEAR
+    y = yearly["평균기온"].to_numpy(dtype=float)
+
+    # y = intercept + slope * (연도 - 1908)
+    slope, intercept = np.polyfit(x, y, 1)
+
+    predicted = intercept + slope * x
+
+    # 상관계수
+    correlation = np.corrcoef(x, y)[0, 1]
+
+    return slope, intercept, correlation, predicted
+
+
+# --------------------------------------------------
+# 데이터 준비
+# --------------------------------------------------
+try:
+    df = load_data()
+    yearly = make_yearly_data(df)
+
+    if len(yearly) < 2:
+        st.error("회귀 분석을 수행할 수 있는 연도 데이터가 부족합니다.")
+        st.stop()
+
+    slope, intercept, correlation, predicted = calculate_regression(yearly)
+
+except Exception as e:
+    st.error(f"데이터를 불러오거나 처리하는 중 오류가 발생했습니다.\n\n{e}")
     st.stop()
 
 
-# ==========================================
-# 학교 검색
-# ==========================================
-
-def search_school(school_name):
-
-    url = f"{BASE_URL}/schoolInfo"
-
-    params = {
-        "KEY": API_KEY,
-        "Type": "json",
-        "pSize": 1000,
-        "SCHUL_NM": school_name
-    }
-
-    try:
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=10
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        if "schoolInfo" in data:
-
-            return data["schoolInfo"][1]["row"]
-
-        return []
-
-    except Exception as e:
-
-        st.error(
-            f"학교 검색 중 오류가 발생했습니다: {e}"
-        )
-
-        return []
+# --------------------------------------------------
+# 제목
+# --------------------------------------------------
+st.title("🌡️ 서울 기온 예측기")
+st.caption(
+    "서울 기상 관측자료의 연평균기온을 이용해 연도별 기온 추세를 "
+    "선형회귀로 추정합니다."
+)
 
 
-# ==========================================
-# 급식 데이터 가져오기
-# ==========================================
+# --------------------------------------------------
+# 회귀 정보
+# --------------------------------------------------
+start_year = int(yearly["연도"].min())
+end_year = int(yearly["연도"].max())
+year_count = len(yearly)
 
-def get_meal_data(
-    atpt_code,
-    school_code,
-    start_date,
-    end_date
-):
+col1, col2, col3, col4 = st.columns(4)
 
-    url = f"{BASE_URL}/mealServiceDietInfo"
+with col1:
+    st.metric("회귀에 사용한 연도 수", f"{year_count}년")
 
-    params = {
-        "KEY": API_KEY,
-        "Type": "json",
+with col2:
+    st.metric("시작 연도", f"{start_year}년")
 
-        "ATPT_OFCDC_SC_CODE": atpt_code,
+with col3:
+    st.metric("끝 연도", f"{end_year}년")
 
-        "SD_SCHUL_CODE": school_code,
-
-        "MMEAL_SC_CODE": "2",
-
-        "MLSV_FROM_YMD": start_date,
-
-        "MLSV_TO_YMD": end_date,
-
-        "pSize": 1000,
-
-        "pIndex": 1
-    }
-
-    try:
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=10
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        # 정상적인 급식 데이터
-        if "mealServiceDietInfo" in data:
-
-            return data["mealServiceDietInfo"][1]["row"]
-
-        # 데이터 없음
-        if "RESULT" in data:
-
-            result = data["RESULT"]
-
-            if result.get("CODE") == "INFO-200":
-
-                return []
-
-            st.error(
-                f"나이스 API 오류: "
-                f"{result.get('CODE')} - "
-                f"{result.get('MESSAGE')}"
-            )
-
-            return []
-
-        return []
-
-    except Exception as e:
-
-        st.error(
-            f"급식 데이터를 가져오는 중 오류가 발생했습니다: {e}"
-        )
-
-        return []
+with col4:
+    st.metric("상관계수", f"{correlation:.3f}")
 
 
-# ==========================================
-# 메뉴 이름 정리
-# ==========================================
+st.info(
+    f"회귀 분석에는 **{start_year}년부터 {end_year}년까지**, "
+    f"관측일수가 {MIN_DAYS}일 이상인 연도만 사용했습니다. "
+    f"2025년 이후 데이터는 제외했습니다."
+)
 
-def clean_menu(menu):
 
-    # 알레르기 번호 및 괄호 내용 제거
-    menu = re.sub(
-        r"\([^)]*\)",
-        "",
-        menu
+# --------------------------------------------------
+# 연도 슬라이더
+# --------------------------------------------------
+selected_year = st.slider(
+    "예측할 연도",
+    min_value=1900,
+    max_value=2100,
+    value=2025,
+    step=1,
+)
+
+# 회귀식으로 선택 연도의 예상 평균기온 계산
+x_selected = selected_year - BASE_YEAR
+predicted_temp = intercept + slope * x_selected
+
+
+# --------------------------------------------------
+# 선택 연도 예상 기온
+# --------------------------------------------------
+st.subheader(f"{selected_year}년 예상 평균기온")
+
+st.metric(
+    label="선형회귀에 따른 예상 연평균기온",
+    value=f"{predicted_temp:.2f} °C",
+)
+
+
+# --------------------------------------------------
+# Plotly 산점도 + 회귀선
+# --------------------------------------------------
+fig = go.Figure()
+
+# 실제 연평균기온 산점도
+fig.add_trace(
+    go.Scatter(
+        x=yearly["연도"],
+        y=yearly["평균기온"],
+        mode="markers",
+        name="실제 연평균기온",
+        marker=dict(
+            size=7,
+            color="#3498db",
+            opacity=0.75,
+        ),
+        customdata=yearly["관측일수"],
+        hovertemplate=(
+            "<b>%{x}년</b><br>"
+            "평균기온: %{y:.2f} °C<br>"
+            "관측일수: %{customdata}일"
+            "<extra></extra>"
+        ),
     )
+)
 
-    # 숫자 제거
-    menu = re.sub(
-        r"\d+",
-        "",
-        menu
+# 회귀선은 1900~2100년 전체 범위에 표시
+regression_years = np.arange(1900, 2101)
+regression_x = regression_years - BASE_YEAR
+regression_temps = intercept + slope * regression_x
+
+fig.add_trace(
+    go.Scatter(
+        x=regression_years,
+        y=regression_temps,
+        mode="lines",
+        name="회귀선",
+        line=dict(
+            color="#e74c3c",
+            width=3,
+        ),
+        hovertemplate=(
+            "<b>%{x}년</b><br>"
+            "회귀 예상기온: %{y:.2f} °C"
+            "<extra></extra>"
+        ),
     )
+)
 
-    # 별표 제거
-    menu = menu.replace(
-        "*",
-        ""
-    )
-
-    # 여러 공백을 하나로
-    menu = re.sub(
-        r"\s+",
-        " ",
-        menu
-    )
-
-    return menu.strip()
-
-
-# ==========================================
-# 급식 메뉴 분리
-# ==========================================
-
-def split_menus(menu_text):
-
-    menus = re.split(
-        r"<br\s*/?>",
-        str(menu_text)
-    )
-
-    result = []
-
-    for menu in menus:
-
-        menu = clean_menu(menu)
-
-        if menu:
-
-            result.append(menu)
-
-    return result
-
-
-# ==========================================
-# 학교 급식 분석
-# ==========================================
-
-def analyze_school(
-    school,
-    start_date,
-    end_date
-):
-
-    meals = get_meal_data(
-        school["ATPT_OFCDC_SC_CODE"],
-        school["SD_SCHUL_CODE"],
-        start_date.strftime("%Y%m%d"),
-        end_date.strftime("%Y%m%d")
-    )
-
-    if not meals:
-
-        return None
-
-    df = pd.DataFrame(meals)
-
-    # 필요한 데이터 확인
-    required_columns = [
-        "MLSV_YMD",
-        "DDISH_NM",
-        "CAL_INFO"
-    ]
-
-    for column in required_columns:
-
-        if column not in df.columns:
-
-            return None
-
-    df = df[required_columns]
-
-    df.columns = [
-        "날짜",
-        "메뉴",
-        "칼로리"
-    ]
-
-    # 날짜 변환
-    df["날짜"] = pd.to_datetime(
-        df["날짜"],
-        format="%Y%m%d"
-    )
-
-    # 메뉴 분리
-    df["메뉴목록"] = df["메뉴"].apply(
-        split_menus
-    )
-
-    # ==========================================
-    # 전체 메뉴 모으기
-    # ==========================================
-
-    all_menus = []
-
-    for menus in df["메뉴목록"]:
-
-        all_menus.extend(menus)
-
-    # ==========================================
-    # 메뉴별 등장 횟수
-    # ==========================================
-
-    menu_count = Counter(
-        all_menus
-    )
-
-    menu_df = pd.DataFrame(
-        menu_count.items(),
-        columns=[
-            "메뉴",
-            "등장횟수"
-        ]
-    )
-
-    menu_df = menu_df.sort_values(
-        "등장횟수",
-        ascending=False
-    )
-
-    # ==========================================
-    # 칼로리 계산
-    # ==========================================
-
-    calories = []
-
-    for value in df["칼로리"]:
-
-        match = re.search(
-            r"\d+(\.\d+)?",
-            str(value)
-        )
-
-        if match:
-
-            calories.append(
-                float(match.group())
-            )
-
-    if calories:
-
-        average_calorie = (
-            sum(calories)
-            / len(calories)
-        )
-
-    else:
-
-        average_calorie = 0
-
-    # ==========================================
-    # 다양성 점수
-    # ==========================================
-
-    total_menu_count = len(
-        all_menus
-    )
-
-    unique_menu_count = len(
-        set(all_menus)
-    )
-
-    if total_menu_count > 0:
-
-        diversity_score = (
-            unique_menu_count
-            / total_menu_count
-        ) * 100
-
-    else:
-
-        diversity_score = 0
-
-    return {
-
-        "학교명":
-            school["SCHUL_NM"],
-
-        "급식일수":
-            len(df),
-
-        "전체메뉴수":
-            total_menu_count,
-
-        "서로다른메뉴":
-            unique_menu_count,
-
-        "다양성점수":
-            round(
-                diversity_score,
-                1
+# 선택된 연도 표시
+fig.add_trace(
+    go.Scatter(
+        x=[selected_year],
+        y=[predicted_temp],
+        mode="markers",
+        name=f"{selected_year}년 예측",
+        marker=dict(
+            size=16,
+            color="#f39c12",
+            line=dict(
+                color="white",
+                width=2,
             ),
-
-        "평균칼로리":
-            round(
-                average_calorie,
-                1
-            ),
-
-        "메뉴분석":
-            menu_df,
-
-        "원본데이터":
-            df
-    }
-
-
-# ==========================================
-# 특정 메뉴와 함께 나온 메뉴 TOP 3
-# 김치 / 밥류 제외
-# ==========================================
-
-def find_related_top3(
-    result,
-    target_menu
-):
-
-    df = result["원본데이터"]
-
-    target_menu = clean_menu(
-        target_menu
+        ),
+        hovertemplate=(
+            f"<b>{selected_year}년</b><br>"
+            f"예상 평균기온: {predicted_temp:.2f} °C"
+            "<extra></extra>"
+        ),
     )
-
-    related_menus = []
-
-    # ==========================================
-    # 특정 메뉴가 나온 날 찾기
-    # ==========================================
-
-    for menus in df["메뉴목록"]:
-
-        # 특정 메뉴가 포함된 날인지 확인
-        has_target = any(
-            target_menu in menu
-            for menu in menus
-        )
-
-        if not has_target:
-
-            continue
-
-        # ======================================
-        # 같은 날 나온 다른 메뉴 찾기
-        # ======================================
-
-        for menu in menus:
-
-            # 특정 메뉴 자체는 제외
-            if target_menu in menu:
-
-                continue
-
-            # 김치류 제외
-            if "김치" in menu:
-
-                continue
-
-            # 밥류 제외
-            if "밥" in menu:
-
-                continue
-
-            # 나머지 메뉴만 추가
-            related_menus.append(
-                menu
-            )
-
-    # ==========================================
-    # 함께 나온 메뉴 횟수 계산
-    # ==========================================
-
-    counter = Counter(
-        related_menus
-    )
-
-    if not counter:
-
-        return pd.DataFrame(
-            columns=[
-                "순위",
-                "함께 나온 메뉴",
-                "횟수"
-            ]
-        )
-
-    # TOP 3
-    top3 = counter.most_common(3)
-
-    top3_df = pd.DataFrame(
-        top3,
-        columns=[
-            "함께 나온 메뉴",
-            "횟수"
-        ]
-    )
-
-    top3_df.insert(
-        0,
-        "순위",
-        range(
-            1,
-            len(top3_df) + 1
-        )
-    )
-
-    return top3_df
-
-
-# ==========================================
-# 사이드바
-# ==========================================
-
-st.sidebar.header(
-    "⚙️ 비교 설정"
 )
 
-st.sidebar.write(
-    "비교할 학교 3곳을 입력하세요."
+fig.update_layout(
+    title="서울 연평균기온과 선형회귀선",
+    xaxis=dict(
+        title="연도",
+        tickmode="linear",
+        dtick=10,
+        range=[1900, 2100],
+    ),
+    yaxis=dict(
+        title="평균기온 (°C)",
+    ),
+    hovermode="closest",
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="left",
+        x=0,
+    ),
+    height=600,
 )
 
-school_names = []
-
-for i in range(3):
-
-    name = st.sidebar.text_input(
-        f"{i + 1}번째 학교",
-        placeholder="예: 인천고등학교",
-        key=f"school_{i}"
-    )
-
-    school_names.append(
-        name
-    )
+st.plotly_chart(fig, use_container_width=True)
 
 
-# ==========================================
-# 특정 메뉴 설정
-# ==========================================
+# --------------------------------------------------
+# 회귀식 / 분석 조건
+# --------------------------------------------------
+st.subheader("회귀 분석 정보")
 
-st.sidebar.markdown("---")
-
-target_menu = st.sidebar.text_input(
-    "🍖 분석할 메인 메뉴",
-    placeholder="예: 제육볶음"
+st.write(
+    f"회귀식: **평균기온 = {intercept:.4f} + "
+    f"{slope:.4f} × (연도 − 1908)**"
 )
 
-st.sidebar.caption(
-    "입력한 메뉴가 나온 날에 "
-    "함께 나온 메뉴 TOP 3를 분석합니다."
+st.write(
+    f"- 사용 연도: {year_count}개"
 )
-
-st.sidebar.caption(
-    "※ 김치류와 밥류는 분석에서 제외됩니다."
+st.write(
+    f"- 시작 연도: {start_year}년"
+)
+st.write(
+    f"- 끝 연도: {end_year}년"
+)
+st.write(
+    f"- 연도별 최소 관측일수: {MIN_DAYS}일"
+)
+st.write(
+    f"- 기준 종료 연도: {LAST_YEAR}년"
 )
 
 
-# ==========================================
-# 날짜 설정
-# ==========================================
-
-start_date = st.sidebar.date_input(
-    "시작 날짜",
-    pd.Timestamp("2026-03-01")
-)
-
-end_date = st.sidebar.date_input(
-    "끝 날짜",
-    pd.Timestamp("2026-07-31")
-)
-
-
-# ==========================================
-# 학교 검색
-# ==========================================
-
-if st.sidebar.button(
-    "🔎 3개 학교 검색"
-):
-
-    st.session_state[
-        "school_results"
-    ] = {}
-
-    for i, name in enumerate(
-        school_names
-    ):
-
-        if not name:
-
-            continue
-
-        with st.spinner(
-            f"{name} 검색 중..."
-        ):
-
-            results = search_school(
-                name
-            )
-
-        st.session_state[
-            "school_results"
-        ][i] = results
-
-
-# ==========================================
-# 학교 선택
-# ==========================================
-
-selected_schools = []
-
-if "school_results" in st.session_state:
-
-    st.subheader(
-        "🏫 학교 선택"
-    )
-
-    for i in range(3):
-
-        results = st.session_state[
-            "school_results"
-        ].get(i, [])
-
-        if not results:
-
-            st.warning(
-                f"{i + 1}번째 학교를 찾지 못했습니다."
-            )
-
-            continue
-
-        options = [
-            f"{school['SCHUL_NM']} "
-            f"({school['LCTN_SC_NM']})"
-            for school in results
-        ]
-
-        selected = st.selectbox(
-            f"{i + 1}번째 학교 선택",
-            options,
-            key=f"selected_{i}"
-        )
-
-        index = options.index(
-            selected
-        )
-
-        selected_schools.append(
-            results[index]
-        )
-
-
-# ==========================================
-# 분석 시작
-# ==========================================
-
-if len(selected_schools) == 3:
-
-    if st.button(
-        "🍚 3개 학교 비교 분석 시작"
-    ):
-
-        if start_date > end_date:
-
-            st.error(
-                "시작 날짜가 끝 날짜보다 늦습니다."
-            )
-
-        else:
-
-            results = []
-
-            progress = st.progress(
-                0
-            )
-
-            for i, school in enumerate(
-                selected_schools
-            ):
-
-                with st.spinner(
-                    f"{school['SCHUL_NM']} "
-                    "급식 데이터 분석 중..."
-                ):
-
-                    result = analyze_school(
-                        school,
-                        start_date,
-                        end_date
-                    )
-
-                if result:
-
-                    results.append(
-                        result
-                    )
-
-                progress.progress(
-                    (i + 1) / 3
-                )
-
-            # ======================================
-            # 데이터 확인
-            # ======================================
-
-            if len(results) < 3:
-
-                st.error(
-                    "3개 학교의 급식 데이터를 "
-                    "모두 가져오지 못했습니다."
-                )
-
-            else:
-
-                # ==================================
-                # 학교 비교표
-                # ==================================
-
-                st.subheader(
-                    "📊 학교별 급식 비교"
-                )
-
-                comparison = pd.DataFrame({
-
-                    "학교": [
-                        r["학교명"]
-                        for r in results
-                    ],
-
-                    "급식일수": [
-                        r["급식일수"]
-                        for r in results
-                    ],
-
-                    "전체 메뉴 수": [
-                        r["전체메뉴수"]
-                        for r in results
-                    ],
-
-                    "서로 다른 메뉴": [
-                        r["서로다른메뉴"]
-                        for r in results
-                    ],
-
-                    "다양성 점수": [
-                        r["다양성점수"]
-                        for r in results
-                    ],
-
-                    "평균 칼로리": [
-                        r["평균칼로리"]
-                        for r in results
-                    ]
-                })
-
-                st.dataframe(
-                    comparison,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-
-                # ==================================
-                # 다양성 그래프
-                # ==================================
-
-                st.subheader(
-                    "🌱 급식 다양성 비교"
-                )
-
-                diversity_chart = comparison[
-                    [
-                        "학교",
-                        "다양성 점수"
-                    ]
-                ].set_index(
-                    "학교"
-                )
-
-                st.bar_chart(
-                    diversity_chart
-                )
-
-
-                # ==================================
-                # 칼로리 그래프
-                # ==================================
-
-                st.subheader(
-                    "🔥 평균 칼로리 비교"
-                )
-
-                calorie_chart = comparison[
-                    [
-                        "학교",
-                        "평균 칼로리"
-                    ]
-                ].set_index(
-                    "학교"
-                )
-
-                st.bar_chart(
-                    calorie_chart
-                )
-
-
-                # ==================================
-                # 다양성 순위
-                # ==================================
-
-                st.subheader(
-                    "🏆 급식 다양성 순위"
-                )
-
-                ranking = comparison.sort_values(
-                    "다양성 점수",
-                    ascending=False
-                ).reset_index(
-                    drop=True
-                )
-
-                ranking.insert(
-                    0,
-                    "순위",
-                    range(
-                        1,
-                        len(ranking) + 1
-                    )
-                )
-
-                st.dataframe(
-                    ranking[
-                        [
-                            "순위",
-                            "학교",
-                            "다양성 점수"
-                        ]
-                    ],
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-
-                # ==================================
-                # 특정 메뉴 조합 분석
-                # ==================================
-
-                if target_menu:
-
-                    st.markdown("---")
-
-                    st.subheader(
-                        f"🍖 '{target_menu}'와 "
-                        "함께 나온 메뉴 TOP 3"
-                    )
-
-                    st.write(
-                        f"'{target_menu}'가 나온 날에 "
-                        "함께 제공된 메뉴를 분석합니다."
-                    )
-
-                    st.caption(
-                        "※ 김치류와 밥류는 제외하고 "
-                        "나머지 메뉴만 계산합니다."
-                    )
-
-                    related_results = []
-
-                    for result in results:
-
-                        top3 = find_related_top3(
-                            result,
-                            target_menu
-                        )
-
-                        related_results.append(
-                            (
-                                result["학교명"],
-                                top3
-                            )
-                        )
-
-
-                    # ==================================
-                    # 학교 3곳 TOP 3
-                    # ==================================
-
-                    cols = st.columns(3)
-
-                    for i, (
-                        school_name,
-                        top3
-                    ) in enumerate(
-                        related_results
-                    ):
-
-                        with cols[i]:
-
-                            st.markdown(
-                                f"### 🏫 {school_name}"
-                            )
-
-                            if top3.empty:
-
-                                st.info(
-                                    f"'{target_menu}'가 "
-                                    "나온 날이 없거나 "
-                                    "분석할 메뉴가 없습니다."
-                                )
-
-                            else:
-
-                                st.dataframe(
-                                    top3,
-                                    use_container_width=True,
-                                    hide_index=True
-                                )
-
-
-                    # ==================================
-                    # 학교별 1위 비교
-                    # ==================================
-
-                    st.subheader(
-                        f"🥇 '{target_menu}' "
-                        "최다 조합 비교"
-                    )
-
-                    first_menus = []
-
-                    for (
-                        school_name,
-                        top3
-                    ) in related_results:
-
-                        if not top3.empty:
-
-                            first = top3.iloc[0]
-
-                            first_menus.append({
-
-                                "학교":
-                                    school_name,
-
-                                "가장 많이 함께 나온 메뉴":
-                                    first["함께 나온 메뉴"],
-
-                                "횟수":
-                                    first["횟수"]
-                            })
-
-                    if first_menus:
-
-                        first_df = pd.DataFrame(
-                            first_menus
-                        )
-
-                        st.dataframe(
-                            first_df,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-
-                    # ==================================
-                    # 분석 문장
-                    # ==================================
-
-                    st.subheader(
-                        "💡 메뉴 조합 분석"
-                    )
-
-                    for (
-                        school_name,
-                        top3
-                    ) in related_results:
-
-                        if not top3.empty:
-
-                            first = top3.iloc[0]
-
-                            st.write(
-                                f"**{school_name}**에서는 "
-                                f"'{target_menu}'가 나온 날 "
-                                f"**{first['함께 나온 메뉴']}**가 "
-                                f"가장 많이 함께 나왔습니다 "
-                                f"({first['횟수']}회)."
-                            )
-
-
-                # ==================================
-                # 학교별 반복 메뉴
-                # ==================================
-
-                st.markdown("---")
-
-                st.subheader(
-                    "🔁 학교별 많이 나온 메뉴"
-                )
-
-                cols = st.columns(3)
-
-                for i, result in enumerate(
-                    results
-                ):
-
-                    with cols[i]:
-
-                        st.markdown(
-                            f"### {result['학교명']}"
-                        )
-
-                        st.dataframe(
-                            result["메뉴분석"].head(10),
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-
-                # ==================================
-                # 최종 분석
-                # ==================================
-
-                st.markdown("---")
-
-                st.subheader(
-                    "📌 최종 분석"
-                )
-
-                best = comparison.loc[
-                    comparison[
-                        "다양성 점수"
-                    ].idxmax()
-                ]
-
-                worst = comparison.loc[
-                    comparison[
-                        "다양성 점수"
-                    ].idxmin()
-                ]
-
-                st.success(
-                    f"🌱 급식 다양성이 가장 높은 학교는 "
-                    f"**{best['학교']}**이며 "
-                    f"다양성 점수는 "
-                    f"**{best['다양성 점수']}점**입니다."
-                )
-
-                st.warning(
-                    f"🔁 다양성 점수가 가장 낮은 학교는 "
-                    f"**{worst['학교']}**이며 "
-                    f"**{worst['다양성 점수']}점**입니다."
-                )
-
-else:
-
-    st.info(
-        "👈 왼쪽에서 학교 3곳을 입력하고 "
-        "'3개 학교 검색'을 눌러주세요."
+# --------------------------------------------------
+# 연도별 데이터 표
+# --------------------------------------------------
+with st.expander("회귀에 사용된 연도별 데이터 보기"):
+    display_df = yearly.copy()
+    display_df["평균기온"] = display_df["평균기온"].round(2)
+
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
     )

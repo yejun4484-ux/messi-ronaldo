@@ -1,4 +1,4 @@
-```python
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -960,4 +960,4 @@ st.caption(
     "장르와 국가는 여러 범주를 숫자로 변환하기 위해 "
     "원-핫 인코딩 방식으로 처리했습니다."
 )
-```
+

@@ -1,131 +1,35 @@
-
+# main.py — 연평균기온에 직선을 맞추고 예측한다
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
+import plotly.express as px
 
-# --------------------------------------------------
-# 기본 설정
-# --------------------------------------------------
-st.set_page_config(
-    page_title="기온 예측기",
-    page_icon="🌡️",
-    layout="wide",
-)
+DATA_URL = "https://raw.githubusercontent.com/greatsong/modudata/bb860932644270ad1199f10d3e7670e30231bce4/data/seoul.csv"
 
-DATA_URL = (
-    "https://raw.githubusercontent.com/greatsong/modudata/"
-    "bb860932644270ad1199f10d3e7670e30231bce4/data/seoul.csv"
-)
-
-BASE_YEAR = 1908
-LAST_CLASS_YEAR = 2025
-MIN_OBSERVATION_DAYS = 300
+st.title("기온 예측기")
 
 
-# --------------------------------------------------
-# 데이터 불러오기
-# --------------------------------------------------
 @st.cache_data
-def load_data():
-    df = pd.read_csv(DATA_URL, encoding="utf-8-sig")
-
-    df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce")
-    df["평균기온"] = pd.to_numeric(df["평균기온"], errors="coerce")
-
-    df = df.dropna(subset=["날짜", "평균기온"])
-
-    df["연도"] = df["날짜"].dt.year
-
-    # 2025년까지의 데이터만 사용
-    df = df[df["연도"] <= LAST_CLASS_YEAR]
-
-    # 연도별 평균기온과 관측일수
-    annual = (
-        df.groupby("연도")
-        .agg(
-            연평균기온=("평균기온", "mean"),
-            관측일수=("평균기온", "count"),
-        )
-        .reset_index()
-    )
-
-    # 관측일수가 300일 미만인 연도 제외
-    annual = annual[
-        annual["관측일수"] >= MIN_OBSERVATION_DAYS
-    ].copy()
-
-    # 1908년부터 지난 연수
-    annual["1908년부터_지난_연수"] = (
-        annual["연도"] - BASE_YEAR
-    )
-
-    return annual
+def load_yearly():
+    df = pd.read_csv(DATA_URL)
+    df["연도"] = pd.to_datetime(df["날짜"]).dt.year
+    grouped = df.groupby("연도")["평균기온"].agg(["mean", "count"]).reset_index()
+    # 2026년 수업은 2025년까지, 유효 관측일 300일 이상인 해를 사용한다.
+    valid = (grouped["연도"] <= 2025) & (grouped["count"] >= 300)
+    return grouped[valid].rename(columns={"mean": "연평균기온"})
 
 
-annual = load_data()
+yearly = load_yearly()
+yearly["1908년부터 지난 연수"] = yearly["연도"] - 1908
+a, b = np.polyfit(yearly["1908년부터 지난 연수"], yearly["연평균기온"], 1)   # 기울기, 편향
 
+fig = px.scatter(yearly, x="연도", y="연평균기온", opacity=0.6)
+fig.add_scatter(x=yearly["연도"], y=a * yearly["1908년부터 지난 연수"] + b, mode="lines", name="회귀 직선")
+st.plotly_chart(fig, width="stretch")
+st.caption(f"직선을 만든 해: {len(yearly)}개 ({yearly['연도'].min()}~{yearly['연도'].max()}년)")
 
-# --------------------------------------------------
-# 전체 기간 회귀
-# --------------------------------------------------
-x_all = annual["1908년부터_지난_연수"].to_numpy()
-y_all = annual["연평균기온"].to_numpy()
-
-slope_all, intercept_all = np.polyfit(
-    x_all,
-    y_all,
-    1
-)
-
-# 1년당 변화량 → 100년당 변화량
-slope_all_100 = slope_all * 100
-
-correlation = annual["연도"].corr(
-    annual["연평균기온"]
-)
-
-start_year = int(annual["연도"].min())
-end_year = int(annual["연도"].max())
-year_count = len(annual)
-
-
-# --------------------------------------------------
-# 최근 20년 회귀
-# --------------------------------------------------
-# 사용 가능한 마지막 연도부터 20년
-recent_start_year = end_year - 19
-
-recent = annual[
-    annual["연도"] >= recent_start_year
-].copy()
-
-x_recent = (
-    recent["연도"] - recent_start_year
-).to_numpy()
-
-y_recent = recent["연평균기온"].to_numpy()
-
-slope_recent, intercept_recent = np.polyfit(
-    x_recent,
-    y_recent,
-    1
-)
-
-# 1년당 변화량 → 100년당 변화량
-slope_recent_100 = slope_recent * 100
-
-
-# --------------------------------------------------
-# 제목
-# --------------------------------------------------
-st.title("🌡️ 기온 예측기")
-
-st.write(
-    "서울의 연도별 평균기온을 이용해 장기간의 기온 변화와 "
-    "최근 20년의 기온 변화 추세를 비교합니다."
-)
-
-
-# ------------------------
-
+st.metric("연도와 연평균기온의 상관계수", f"{yearly['연도'].corr(yearly['연평균기온']):.3f}")
+year = st.slider("연도를 고르세요", 1900, 2100, 2045)
+st.metric(f"{year}년 예상 연평균기온", f"{a * (year - 1908) + b:.1f}℃")
+if year < yearly["연도"].min() or year > yearly["연도"].max():
+    st.info("학습 범위 밖의 외삽값입니다. 실제 미래 기온을 보장하지 않습니다.")

@@ -1,4 +1,4 @@
-```python
+
 import streamlit as st
 import pandas as pd
 from pathlib import Path
@@ -300,4 +300,3 @@ pages = {
 
 navigation = st.navigation(pages)
 navigation.run()
-```

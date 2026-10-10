@@ -11,12 +11,17 @@ st.set_page_config(
     layout="wide",
 )
 
-DATA_URL = "https://raw.githubusercontent.com/greatsong/modudata/main/data/stroke.csv"
+DATA_URL = (
+    "https://raw.githubusercontent.com/"
+    "greatsong/modudata/main/data/stroke.csv"
+)
 
 
+# -----------------------------
+# 데이터 불러오기
+# -----------------------------
 @st.cache_data
 def load_data():
-    """UTF-8 CSV를 불러오고 원본 값은 임의로 수정하지 않습니다."""
     return pd.read_csv(DATA_URL, encoding="utf-8")
 
 
@@ -24,9 +29,9 @@ st.title("🧠 뇌졸중 예측 실습실")
 st.subheader("데이터를 살펴보며 예측 실습을 준비해 봅시다")
 
 st.write(
-    "이 데이터는 사람들의 기본 정보와 건강 관련 정보, 생활 습관, "
-    "그리고 뇌졸중 발생 여부를 담고 있습니다. 먼저 데이터의 크기와 각 열의 "
-    "특징, 비어 있는 값이 있는지 확인해 봅니다."
+    "이 데이터는 사람들의 기본 정보와 건강 관련 정보, "
+    "생활 습관, 그리고 뇌졸중 발생 여부를 담고 있습니다. "
+    "먼저 데이터의 크기와 각 열의 특징을 살펴봅시다."
 )
 
 try:
@@ -41,7 +46,7 @@ except Exception as e:
 
 
 # -----------------------------
-# 요약 숫자 카드
+# 데이터 요약 카드 4개
 # -----------------------------
 total_people = len(df)
 column_count = len(df.columns)
@@ -52,7 +57,7 @@ stroke_count = int(
 
 stroke_rate = (
     stroke_count / total_people * 100
-    if total_people
+    if total_people > 0
     else 0
 )
 
@@ -66,8 +71,8 @@ c3.metric("stroke가 1인 사람 수", f"{stroke_count:,}명")
 c4.metric("stroke가 1인 비율", f"{stroke_rate:.2f}%")
 
 st.caption(
-    "참고: 여기서 비율은 전체 행 중 stroke 값이 1인 행의 비율입니다. "
-    "이 데이터의 비율만으로 개인의 뇌졸중 위험을 판단할 수는 없습니다."
+    "비율은 전체 데이터 중 stroke 값이 1인 행의 비율입니다. "
+    "이 비율만으로 개인의 뇌졸중 위험을 판단할 수는 없습니다."
 )
 
 
@@ -77,7 +82,8 @@ st.caption(
 st.markdown("### 열 정보")
 
 st.write(
-    "‘우리말 뜻’ 칸은 교재를 참고해 직접 작성할 수 있도록 비워 두었습니다."
+    "각 열의 우리말 뜻을 직접 입력해 보세요. "
+    "입력한 내용은 표에 바로 반영됩니다."
 )
 
 binary_columns = {
@@ -96,7 +102,7 @@ categorical_columns = {
 
 
 def value_kind(column, series):
-    """각 열의 값 종류를 설명하는 문자열을 반환합니다."""
+    """열에 포함된 값의 종류를 설명합니다."""
 
     if column in binary_columns:
         return "0 또는 1"
@@ -109,11 +115,10 @@ def value_kind(column, series):
         if len(values) > 5:
             return f"문자형 범주 ({len(values)}종류)"
 
-        return (
-            "문자형: " + ", ".join(values)
-            if values
-            else "문자형"
-        )
+        if values:
+            return "문자형: " + ", ".join(values)
+
+        return "문자형"
 
     if pd.api.types.is_numeric_dtype(series):
         return "숫자형"
@@ -125,8 +130,9 @@ def value_kind(column, series):
     return f"문자형 범주 ({len(values)}종류)"
 
 
+# 편집 가능한 표의 기본 데이터 만들기
 column_info = pd.DataFrame({
-    "열 이름": df.columns,
+    "열 이름": df.columns.tolist(),
     "우리말 뜻": ["" for _ in df.columns],
     "값의 종류": [
         value_kind(col, df[col])
@@ -138,33 +144,60 @@ column_info = pd.DataFrame({
     ],
 })
 
-st.dataframe(
+# 우리말 뜻을 직접 입력할 수 있는 편집기
+edited_info = st.data_editor(
     column_info,
     use_container_width=True,
     hide_index=True,
+    num_rows="fixed",
+    key="column_info_editor",
     column_config={
-        "열 이름": st.column_config.TextColumn("열 이름"),
+        "열 이름": st.column_config.TextColumn(
+            "열 이름",
+            disabled=True,
+        ),
         "우리말 뜻": st.column_config.TextColumn(
             "우리말 뜻",
-            help="교재를 보고 직접 채워 보세요.",
+            help="이 칸을 클릭하고 우리말 뜻을 입력하세요.",
+            disabled=False,
         ),
-        "값의 종류": st.column_config.TextColumn("값의 종류"),
+        "값의 종류": st.column_config.TextColumn(
+            "값의 종류",
+            disabled=True,
+        ),
         "빈 값 개수": st.column_config.NumberColumn(
             "빈 값 개수",
             format="%d",
+            disabled=True,
         ),
     },
 )
 
+# 입력한 우리말 뜻을 현재 세션에서 유지
+if "korean_meanings" not in st.session_state:
+    st.session_state["korean_meanings"] = {
+        row["열 이름"]: row["우리말 뜻"]
+        for _, row in column_info.iterrows()
+    }
+
+for _, row in edited_info.iterrows():
+    st.session_state["korean_meanings"][
+        row["열 이름"]
+    ] = row["우리말 뜻"]
+
+st.caption(
+    "우리말 뜻 칸을 클릭해 내용을 입력하거나 수정할 수 있습니다. "
+    "현재 입력 내용은 이 앱의 세션에서 유지되며, "
+    "앱을 새로 시작하면 초기화될 수 있습니다."
+)
+
 
 # -----------------------------
-# 원본 데이터 첫 5행
+# 데이터 첫 5행
 # -----------------------------
 st.markdown("### 데이터 첫 5행")
 
-st.write(
-    "아래 표는 원본 데이터에서 처음 다섯 행을 가져온 것입니다."
-)
+st.write("원본 데이터에서 처음 다섯 행을 그대로 보여 줍니다.")
 
 st.dataframe(
     df.head(5),
@@ -174,18 +207,16 @@ st.dataframe(
 
 
 # -----------------------------
-# 데이터 출처 작성 공간
+# 데이터 출처 입력란
 # -----------------------------
 st.markdown("### 데이터 출처")
 
-st.write(
-    "교재에 적힌 데이터 출처를 아래에 옮겨 적어 보세요."
-)
+st.write("교재에 적힌 데이터 출처를 입력해 보세요.")
 
 st.text_area(
-    "데이터 출처 (직접 작성)",
-    value="",
-    placeholder="교재를 참고해 데이터 출처를 입력하세요.",
+    "데이터 출처",
+    key="data_source_input",
+    placeholder="교재에 나온 데이터 출처를 입력하세요.",
     height=100,
     label_visibility="collapsed",
 )

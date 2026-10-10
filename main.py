@@ -1,423 +1,198 @@
 
-import re
-from itertools import combinations
-
-import pandas as pd
-import plotly.express as px
 import streamlit as st
+import pandas as pd
 
-
-# --------------------------------------------------
+# -----------------------------
 # 페이지 설정
-# --------------------------------------------------
+# -----------------------------
 st.set_page_config(
-    page_title="급식 규칙 찾기",
-    page_icon="🍱",
+    page_title="뇌졸중 예측 실습실",
+    page_icon="🧠",
     layout="wide",
 )
 
-DATA_URL = (
-    "https://raw.githubusercontent.com/teacher188-netizen/"
-    "2026-datascience/refs/heads/main/dorim_meals.csv"
-)
-
-st.title("🍱 급식 규칙 찾기")
-st.caption("함께 나오는 메뉴와 한 번도 함께 나오지 않은 메뉴를 찾아봅니다.")
+DATA_URL = "https://raw.githubusercontent.com/greatsong/modudata/main/data/stroke.csv"
 
 
-# --------------------------------------------------
-# 데이터 불러오기 및 전처리
-# --------------------------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv(DATA_URL, encoding="utf-8")
-
-    required_columns = {"날짜", "식사", "메뉴"}
-    missing = required_columns - set(df.columns)
-
-    if missing:
-        raise ValueError(
-            f"CSV에 필요한 열이 없습니다: {', '.join(sorted(missing))}"
-        )
-
-    df = df[["날짜", "식사", "메뉴"]].copy()
-    df = df.dropna(subset=["메뉴"])
-    df["메뉴"] = df["메뉴"].astype(str)
-
-    def clean_menu(name):
-        name = str(name).strip()
-
-        # 괄호 안의 내용을 반복적으로 제거
-        previous = None
-        while previous != name:
-            previous = name
-            name = re.sub(r"\([^()]*\)", "", name)
-            name = re.sub(r"\[[^\[\]]*\]", "", name)
-            name = re.sub(r"（[^（）]*）", "", name)
-
-        return re.sub(r"\s+", " ", name).strip()
-
-    baskets = []
-
-    for menu_text in df["메뉴"]:
-        items = set()
-
-        for item in menu_text.split("|"):
-            cleaned = clean_menu(item)
-            if cleaned:
-                items.add(cleaned)
-
-        baskets.append(items)
-
-    df["장바구니"] = baskets
-
-    # 메뉴가 하나도 없는 식단은 제외
-    df = df[df["장바구니"].map(len) > 0].reset_index(drop=True)
-
-    return df
+    """UTF-8 CSV를 불러오고 원본 값은 임의로 수정하지 않습니다."""
+    return pd.read_csv(DATA_URL, encoding="utf-8")
 
 
-# --------------------------------------------------
-# 연관 규칙 계산
-# --------------------------------------------------
-@st.cache_data
-def make_rules(baskets):
-    total_days = len(baskets)
+st.title("🧠 뇌졸중 예측 실습실")
+st.subheader("데이터를 살펴보며 예측 실습을 준비해 봅시다")
 
-    menu_count = {}
-    pair_count = {}
+st.write(
+    "이 데이터는 사람들의 기본 정보와 건강 관련 정보, 생활 습관, "
+    "그리고 뇌졸중 발생 여부를 담고 있습니다. 먼저 데이터의 크기와 각 열의 "
+    "특징, 비어 있는 값이 있는지 확인해 봅니다."
+)
 
-    for basket in baskets:
-        for menu in basket:
-            menu_count[menu] = menu_count.get(menu, 0) + 1
-
-        for a, b in combinations(sorted(basket), 2):
-            pair_count[(a, b)] = pair_count.get((a, b), 0) + 1
-
-    columns = [
-        "조건", "결과", "동시", "지지도", "신뢰도", "향상도"
-    ]
-
-    rows = []
-
-    for (a, b), both_count in pair_count.items():
-        support = both_count / total_days
-
-        # A -> B
-        confidence_ab = both_count / menu_count[a]
-        lift_ab = confidence_ab / (menu_count[b] / total_days)
-
-        rows.append({
-            "조건": a,
-            "결과": b,
-            "동시": both_count,
-            "지지도": support,
-            "신뢰도": confidence_ab,
-            "향상도": lift_ab,
-        })
-
-        # B -> A
-        confidence_ba = both_count / menu_count[b]
-        lift_ba = confidence_ba / (menu_count[a] / total_days)
-
-        rows.append({
-            "조건": b,
-            "결과": a,
-            "동시": both_count,
-            "지지도": support,
-            "신뢰도": confidence_ba,
-            "향상도": lift_ba,
-        })
-
-    rules = pd.DataFrame(rows, columns=columns)
-
-    return rules, menu_count, pair_count
-
-
-# --------------------------------------------------
-# 앱 실행
-# --------------------------------------------------
 try:
     df = load_data()
 except Exception as e:
-    st.error(f"데이터를 불러오지 못했습니다: {e}")
-    st.info("CSV 주소, 인터넷 연결, 열 이름을 확인해 주세요.")
+    st.error(
+        "데이터를 불러오지 못했습니다. "
+        "인터넷 연결과 데이터 주소를 확인해 주세요."
+    )
+    st.code(str(e))
     st.stop()
 
 
-baskets = df["장바구니"].tolist()
-total_days = len(baskets)
+# -----------------------------
+# 요약 숫자 카드
+# -----------------------------
+total_people = len(df)
+column_count = len(df.columns)
 
-rules, menu_count, pair_count = make_rules(baskets)
-
-all_menus = sorted(menu_count.keys())
-menu_types = len(all_menus)
-pair_types = len(pair_count)
-
-
-# --------------------------------------------------
-# 상단 요약
-# --------------------------------------------------
-c1, c2, c3 = st.columns(3)
-
-c1.metric("급식 일수", f"{total_days:,}일")
-c2.metric("메뉴 종류 수", f"{menu_types:,}종")
-c3.metric("함께 나온 메뉴 쌍의 수", f"{pair_types:,}쌍")
-
-st.divider()
-
-
-# --------------------------------------------------
-# 연관 규칙 탐색
-# --------------------------------------------------
-st.subheader("🔎 연관 규칙 탐색")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    selected_menu = st.selectbox(
-        "좁혀 보기: 메뉴 선택",
-        options=["전체 메뉴"] + all_menus,
-        index=0,
-        key="rule_menu_filter",
-    )
-
-with col2:
-    sort_option = st.selectbox(
-        "정렬 기준",
-        options=["향상도 순", "신뢰도 순", "동시 순"],
-        index=0,
-        key="rule_sort",
-    )
-
-min_cooccurrence = st.slider(
-    "최소 동시 일수",
-    min_value=1,
-    max_value=10,
-    value=1,
-    step=1,
-    help="선택한 일수보다 적게 함께 나온 규칙은 표와 그래프에서 제외합니다.",
+stroke_count = int(
+    (pd.to_numeric(df["stroke"], errors="coerce") == 1).sum()
 )
 
-# 최소 동시 일수 적용
-filtered = rules[rules["동시"] >= min_cooccurrence].copy()
+stroke_rate = (
+    stroke_count / total_people * 100
+    if total_people
+    else 0
+)
 
-# 선택 메뉴가 조건 또는 결과에 포함된 규칙만 남김
-if selected_menu != "전체 메뉴":
-    filtered = filtered[
-        (filtered["조건"] == selected_menu)
-        | (filtered["결과"] == selected_menu)
-    ].copy()
+st.markdown("### 데이터 한눈에 보기")
 
-sort_columns = {
-    "향상도 순": "향상도",
-    "신뢰도 순": "신뢰도",
-    "동시 순": "동시",
-}
+c1, c2, c3, c4 = st.columns(4)
 
-filtered = filtered.sort_values(
-    sort_columns[sort_option],
-    ascending=False,
-    kind="stable",
-).reset_index(drop=True)
-
-
-# --------------------------------------------------
-# 규칙 표
-# --------------------------------------------------
-st.subheader("📋 연관 규칙 표")
-
-# 슬라이더와 메뉴 필터 적용 후 남은 규칙 수
-st.write(f"**현재 표에 남은 규칙: {len(filtered):,}개**")
+c1.metric("전체 사람 수", f"{total_people:,}명")
+c2.metric("열 개수", f"{column_count:,}개")
+c3.metric("stroke가 1인 사람 수", f"{stroke_count:,}명")
+c4.metric("stroke가 1인 비율", f"{stroke_rate:.2f}%")
 
 st.caption(
-    "지지도 = 두 메뉴가 함께 나온 비율 · "
-    "신뢰도 = 조건 메뉴가 나온 날 중 결과 메뉴도 나온 비율 · "
-    "향상도 = 결과 메뉴의 평소 등장 비율 대비 실제 등장 비율"
-)
-
-if filtered.empty:
-    st.info(
-        "현재 조건에 맞는 규칙이 없습니다. "
-        "최소 동시 일수를 낮추거나 다른 메뉴를 선택해 보세요."
-    )
-else:
-    display_rules = filtered.copy()
-
-    display_rules["지지도"] = display_rules["지지도"].map(
-        lambda x: f"{x:.1%}"
-    )
-    display_rules["신뢰도"] = display_rules["신뢰도"].map(
-        lambda x: f"{x:.1%}"
-    )
-    display_rules["향상도"] = display_rules["향상도"].map(
-        lambda x: f"{x:.3f}"
-    )
-
-    st.dataframe(
-        display_rules,
-        use_container_width=True,
-        hide_index=True,
-        height=420,
-    )
-
-st.caption(
-    "같은 메뉴 쌍은 조건과 결과를 바꾼 두 방향의 규칙으로 표시됩니다."
+    "참고: 여기서 비율은 전체 행 중 stroke 값이 1인 행의 비율입니다. "
+    "이 데이터의 비율만으로 개인의 뇌졸중 위험을 판단할 수는 없습니다."
 )
 
 
-# --------------------------------------------------
-# 향상도 상위 10개 그래프
-# --------------------------------------------------
-st.divider()
-st.subheader("📊 향상도 상위 10개 규칙")
-
-if filtered.empty:
-    st.info("그래프로 표시할 규칙이 없습니다.")
-else:
-    top10 = (
-        filtered.sort_values(
-            "향상도",
-            ascending=False,
-            kind="stable",
-        )
-        .head(10)
-        .copy()
-    )
-
-    top10["규칙"] = top10["조건"] + " → " + top10["결과"]
-
-    # 가로 막대그래프에서 가장 높은 값이 위에 표시되도록 정렬
-    top10 = top10.sort_values("향상도", ascending=True)
-
-    fig = px.bar(
-        top10,
-        x="향상도",
-        y="규칙",
-        orientation="h",
-        text="향상도",
-        hover_data={
-            "동시": True,
-            "지지도": ":.1%",
-            "신뢰도": ":.1%",
-            "향상도": ":.3f",
-            "규칙": False,
-        },
-        labels={
-            "향상도": "향상도",
-            "규칙": "연관 규칙",
-            "동시": "함께 나온 일수",
-        },
-        title="향상도가 높은 규칙",
-    )
-
-    fig.update_traces(
-        texttemplate="%{text:.2f}",
-        textposition="outside",
-        cliponaxis=False,
-    )
-
-    fig.update_layout(
-        yaxis_title="",
-        xaxis_title="향상도",
-        height=max(380, len(top10) * 42),
-        margin=dict(l=20, r=70, t=60, b=40),
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-st.caption(
-    "향상도가 1보다 크면 두 메뉴가 독립적으로 등장한다고 예상할 때보다 "
-    "자주 함께 나온다는 뜻입니다. 함께 나온 횟수와 신뢰도도 같이 확인하세요."
-)
-
-
-# --------------------------------------------------
-# 함께 나온 적 없는 짝
-# --------------------------------------------------
-st.divider()
-st.subheader("🚫 함께 나온 적 없는 짝")
+# -----------------------------
+# 열 정보 표
+# -----------------------------
+st.markdown("### 열 정보")
 
 st.write(
-    "메뉴 하나를 선택하면, 그 메뉴와 같은 날 한 번도 함께 나오지 않았지만 "
-    "자신은 10일 이상 등장한 메뉴를 찾아줍니다."
+    "‘우리말 뜻’ 칸은 교재를 참고해 직접 작성할 수 있도록 비워 두었습니다."
 )
 
-selected_absent_menu = st.selectbox(
-    "함께 나온 적 없는 짝 찾기: 기준 메뉴 선택",
-    options=all_menus,
-    index=0,
-    key="absent_menu_filter",
+binary_columns = {
+    "hypertension",
+    "heart_disease",
+    "stroke",
+}
+
+categorical_columns = {
+    "gender",
+    "ever_married",
+    "work_type",
+    "Residence_type",
+    "smoking_status",
+}
+
+
+def value_kind(column, series):
+    """각 열의 값 종류를 설명하는 문자열을 반환합니다."""
+
+    if column in binary_columns:
+        return "0 또는 1"
+
+    if column in categorical_columns:
+        values = sorted(
+            series.dropna().astype(str).unique().tolist()
+        )
+
+        if len(values) > 5:
+            return f"문자형 범주 ({len(values)}종류)"
+
+        return (
+            "문자형: " + ", ".join(values)
+            if values
+            else "문자형"
+        )
+
+    if pd.api.types.is_numeric_dtype(series):
+        return "숫자형"
+
+    values = sorted(
+        series.dropna().astype(str).unique().tolist()
+    )
+
+    return f"문자형 범주 ({len(values)}종류)"
+
+
+column_info = pd.DataFrame({
+    "열 이름": df.columns,
+    "우리말 뜻": ["" for _ in df.columns],
+    "값의 종류": [
+        value_kind(col, df[col])
+        for col in df.columns
+    ],
+    "빈 값 개수": [
+        int(df[col].isna().sum())
+        for col in df.columns
+    ],
+})
+
+st.dataframe(
+    column_info,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "열 이름": st.column_config.TextColumn("열 이름"),
+        "우리말 뜻": st.column_config.TextColumn(
+            "우리말 뜻",
+            help="교재를 보고 직접 채워 보세요.",
+        ),
+        "값의 종류": st.column_config.TextColumn("값의 종류"),
+        "빈 값 개수": st.column_config.NumberColumn(
+            "빈 값 개수",
+            format="%d",
+        ),
+    },
 )
 
-# 기준 메뉴가 나온 날짜 수
-selected_days = menu_count[selected_absent_menu]
 
-st.metric(
-    f"'{selected_absent_menu}' 등장 일수",
-    f"{selected_days:,}일",
+# -----------------------------
+# 원본 데이터 첫 5행
+# -----------------------------
+st.markdown("### 데이터 첫 5행")
+
+st.write(
+    "아래 표는 원본 데이터에서 처음 다섯 행을 가져온 것입니다."
 )
 
-# 기준 메뉴와 함께 나온 적이 있는 메뉴 집합
-cooccurred_menus = set()
-
-for basket in baskets:
-    if selected_absent_menu in basket:
-        cooccurred_menus.update(basket)
-
-# 자기 자신 제외, 함께 나온 적 없는 메뉴 중 10일 이상 등장한 메뉴
-absent_candidates = [
-    (menu, days)
-    for menu, days in menu_count.items()
-    if menu != selected_absent_menu
-    and menu not in cooccurred_menus
-    and days >= 10
-]
-
-absent_df = pd.DataFrame(
-    absent_candidates,
-    columns=["메뉴", "등장 일수"],
+st.dataframe(
+    df.head(5),
+    use_container_width=True,
+    hide_index=True,
 )
 
-if absent_df.empty:
-    st.info(
-        "이 메뉴와 한 번도 함께 나오지 않았고 "
-        "10일 이상 등장한 메뉴가 없습니다."
-    )
-else:
-    absent_df = absent_df.sort_values(
-        "등장 일수",
-        ascending=False,
-        kind="stable",
-    ).reset_index(drop=True)
 
-    st.write(
-        f"**조건에 맞는 메뉴: {len(absent_df):,}종**"
-    )
+# -----------------------------
+# 데이터 출처 작성 공간
+# -----------------------------
+st.markdown("### 데이터 출처")
 
-    st.dataframe(
-        absent_df,
-        use_container_width=True,
-        hide_index=True,
-    )
+st.write(
+    "교재에 적힌 데이터 출처를 아래에 옮겨 적어 보세요."
+)
 
-    st.caption(
-        "등장 일수는 해당 메뉴가 포함된 급식 일수입니다. "
-        "같은 식단에 같은 메뉴가 중복 기재되어 있어도 하루에 한 번만 셉니다."
-    )
+st.text_area(
+    "데이터 출처 (직접 작성)",
+    value="",
+    placeholder="교재를 참고해 데이터 출처를 입력하세요.",
+    height=100,
+    label_visibility="collapsed",
+)
 
+st.divider()
 
-# --------------------------------------------------
-# 원본 데이터 확인
-# --------------------------------------------------
-with st.expander("원본 데이터 보기"):
-    st.dataframe(
-        df[["날짜", "식사", "메뉴"]],
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.caption(
-        "분석 전 메뉴명의 괄호 내용은 제거됩니다. "
-        "한 식단 안에서 같은 메뉴는 한 번만 계산합니다."
-    )
+st.caption(
+    "실습 안내: 이 앱은 데이터 탐색을 위한 교육용 예제입니다. "
+    "실제 의료 진단이나 개인의 건강 상태 판단에 사용하지 마세요."
+)

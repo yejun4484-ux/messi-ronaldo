@@ -265,6 +265,10 @@ def missing_page(title, relative_path):
         "pages/2_분류_모델.py",
         title="2. 분류 모델",
         icon="🤖",
+    st.Page(
+        "pages/3_채점표.py",
+        title="3. 채점표",
+        icon="🤖",
     ),
 ])
 

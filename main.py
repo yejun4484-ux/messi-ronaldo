@@ -240,7 +240,8 @@ def missing_page(title, relative_path):
             "├── main.py\n"
             "└── pages/\n"
             "    ├── 1_탐색.py\n"
-            "    └── 2_분류_모델.py"
+            "    ├── 2_분류_모델.py\n"
+            "    └── 3_채점표.py"
         )
 
     return render
@@ -265,10 +266,11 @@ def missing_page(title, relative_path):
         "pages/2_분류_모델.py",
         title="2. 분류 모델",
         icon="🤖",
+    ),
     st.Page(
         "pages/3_채점표.py",
         title="3. 채점표",
-        icon="🤖",
+        icon="📋",
     ),
 ])
 

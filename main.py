@@ -298,5 +298,5 @@ PAGES = {
     ]
 }
 
-navigation = st.navigation(pages)
+navigation = st.navigation(PAGES)
 navigation.run()

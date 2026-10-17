@@ -1,9 +1,7 @@
-
 # pages/3_채점표.py
 # 채점용 데이터로 두 모델의 혼동행렬과 성능 지표를 비교한다.
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from sklearn.linear_model import LogisticRegression
@@ -58,14 +56,16 @@ def load_data():
     for col in required_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df = df.dropna(subset=[
-        "id",
-        "age",
-        "avg_glucose_level",
-        "hypertension",
-        "heart_disease",
-        "stroke",
-    ])
+    df = df.dropna(
+        subset=[
+            "id",
+            "age",
+            "avg_glucose_level",
+            "hypertension",
+            "heart_disease",
+            "stroke",
+        ]
+    )
 
     df = df[df["stroke"].isin([0, 1])].copy()
     df["stroke"] = df["stroke"].astype(int)
@@ -237,7 +237,7 @@ def get_metrics(cm):
 
     accuracy = (tp + tn) / total if total else 0.0
 
-    # 예측 양성이 0명일 때 정밀도만 계산할 수 없음
+    # 예측 양성이 0명일 때 정밀도는 계산할 수 없다.
     precision = (
         tp / predicted_positive
         if predicted_positive > 0
@@ -250,7 +250,7 @@ def get_metrics(cm):
         else 0.0
     )
 
-    # 요청한 공식: 2TP / (2TP + FP + FN)
+    # F1 = 2TP / (2TP + FP + FN)
     f1_denominator = 2 * tp + fp + fn
     f1 = (
         2 * tp / f1_denominator
@@ -266,8 +266,9 @@ def get_metrics(cm):
     }
 
 
+# ★ 오류 수정: 실제 정답 y_test와 예측 pred를 모두 전달한다.
 confusion_results = {
-    name: get_confusion(pred)
+    name: get_confusion(y_test, pred)
     for name, pred in predictions.items()
 }
 
@@ -307,6 +308,7 @@ st.write(
     "행은 실제 상태, 열은 모델의 예측입니다. "
     "0은 뇌졸중 아님, 1은 뇌졸중입니다."
 )
+
 
 def make_confusion_table(cm):
     tn = cm["TN"]

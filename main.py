@@ -224,7 +224,7 @@ def show_home():
 
 
 # ==========================================
-# 페이지 파일 확인
+# 페이지 파일 확인용 함수
 # ==========================================
 def missing_page(title, relative_path):
     def render():
@@ -250,9 +250,22 @@ def missing_page(title, relative_path):
 # 페이지 등록
 # ==========================================
 페이지 = st.navigation([
-    st.Page(홈_화면, title="실습실 홈", icon="🏠", default=True),
-    st.Page("PAGES/1_탐색.py", title="1. 데이터 탐색", icon="🔎"),
-    st.Page("PAGES/2_분류_모델.py", title="2. 분류 모델", icon="🔎"),
+    st.Page(
+        show_home,
+        title="실습실 홈",
+        icon="🏠",
+        default=True,
+    ),
+    st.Page(
+        "PAGES/1_탐색.py",
+        title="1. 데이터 탐색",
+        icon="🔎",
+    ),
+    st.Page(
+        "PAGES/2_분류_모델.py",
+        title="2. 분류 모델",
+        icon="🤖",
+    ),
 ])
 
 페이지.run()

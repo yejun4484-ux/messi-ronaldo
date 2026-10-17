@@ -238,7 +238,7 @@ def missing_page(title, relative_path):
         st.code(
             "프로젝트 폴더/\n"
             "├── main.py\n"
-            "└── PAGES/\n"
+            "└── pages/\n"
             "    ├── 1_탐색.py\n"
             "    └── 2_분류_모델.py"
         )
@@ -257,12 +257,12 @@ def missing_page(title, relative_path):
         default=True,
     ),
     st.Page(
-        "PAGES/1_탐색.py",
+        "pages/1_탐색.py",
         title="1. 데이터 탐색",
         icon="🔎",
     ),
     st.Page(
-        "PAGES/2_분류_모델.py",
+        "pages/2_분류_모델.py",
         title="2. 분류 모델",
         icon="🤖",
     ),

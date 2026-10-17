@@ -249,54 +249,10 @@ def missing_page(title, relative_path):
 # ==========================================
 # 페이지 등록
 # ==========================================
-home_page = st.Page(
-    show_home,
-    title="홈",
-    icon="🏠",
-    default=True,
-)
+페이지 = st.navigation([
+    st.Page(홈_화면, title="실습실 홈", icon="🏠", default=True),
+    st.Page("PAGES/1_탐색.py", title="1. 데이터 탐색", icon="🔎"),
+    st.Page("PAGES/2_분류_모델.py", title="2. 분류 모델", icon="🔎"),
+])
 
-explore_path = BASE_DIR / "PAGES" / "1_탐색.py"
-classifier_path = BASE_DIR / "PAGES" / "2_분류_모델.py"
-
-if explore_path.exists():
-    explore_target = str(explore_path)
-else:
-    explore_target = missing_page(
-        "🔎 탐색",
-        "PAGES/1_탐색.py",
-    )
-
-if classifier_path.exists():
-    classifier_target = str(classifier_path)
-else:
-    classifier_target = missing_page(
-        "🤖 분류 모델",
-        "PAGES/2_분류_모델.py",
-    )
-
-explore_page = st.Page(
-    explore_target,
-    title="탐색",
-    icon="🔎",
-)
-
-classifier_page = st.Page(
-    classifier_target,
-    title="분류 모델",
-    icon="🤖",
-)
-
-# ==========================================
-# 사이드바 메뉴
-# ==========================================
-PAGES = {
-    "뇌졸중 예측 실습실": [
-        home_page,
-        explore_page,
-        classifier_page,
-    ]
-}
-
-navigation = st.navigation(PAGES)
-navigation.run()
+페이지.run()

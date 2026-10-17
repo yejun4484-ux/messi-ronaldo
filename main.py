@@ -276,6 +276,11 @@ def missing_page(title, relative_path):
         title="4. 전처리",
         icon="🤖",
     ),
+   st.Page(
+    "pages/5_내가_만든_모델_소개.py",
+    title="5. 내가 만든 모델 소개",
+    icon="📝",
+),
 ])
 
 페이지.run()

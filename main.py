@@ -274,6 +274,8 @@ def missing_page(title, relative_path):
     st.Page(
         "pages/4_전처리.py",
         title="4. 전처리",
-        icon="🤖",)
+        icon="🤖",
+    ),
+])
 
 페이지.run()
